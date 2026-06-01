@@ -48,9 +48,15 @@ dev = [
 plan = [
     "tm-spec",
 ]
+# Thin in-process stdio MCP server (no proxy / network / Docker). `.[dev]` and
+# `pip install -e .` stay green without it; only `prodromos-mcp` needs it.
+mcp = [
+    "mcp>=1.0",
+]
 
 [project.scripts]
 prodromos = "prodromos.__main__:main"
+prodromos-mcp = "prodromos.mcp_server:main"
 
 [project.urls]
 Homepage = "https://github.com/exopoiesis/prodromos"

@@ -55,21 +55,53 @@ prodromos --help                  # list all subcommands
 prodromos electron-parity --help  # any subcommand forwards to its own argparse
 ```
 
-Subcommands: `electron-parity`, `spin-collapse`, `saddle-proximity`,
-`endpoint-provenance`, `symmetry-preflight`, `vfe-preflight`, `magnetic-parser`,
-`magnetic-endpoint`, `magnetic-band`, `magnetic-recommend`, `multi-endpoint`,
-`soap-cluster`, `adaptive-neb`, `neb-advisor`, `gp-neb`, `master-equation`,
-`external-reference`, `lint-dft-script`, `h-barrier-readiness`.
+Subcommands: `plan` (orchestrator), `from-inputs` (QE/ABACUS → tm-spec),
+`electron-parity`, `spin-collapse`, `saddle-proximity`, `endpoint-provenance`,
+`symmetry-preflight`, `vfe-preflight`, `magnetic-parser`, `magnetic-endpoint`,
+`magnetic-band`, `magnetic-recommend`, `multi-endpoint`, `soap-cluster`,
+`adaptive-neb`, `neb-advisor`, `gp-neb`, `master-equation`, `external-reference`,
+`lint-dft-script`, `h-barrier-readiness`.
 
 Every production-facing gate emits a stable JSON envelope (`tool`, `verdict`,
 `confidence`, `reasons`, `next_actions`, `artifacts`, `warnings`, `result`) via
 `prodromos.cli_contract` — CLI- and MCP-ready. Add `--json` for machine output,
 `--output result.json` to also write it to disk.
 
+## MCP server
+
+A thin in-process stdio MCP server exposes the same gates to an LLM agent
+(Claude Desktop / Claude Code). It runs in-process — no proxy, no network, no
+Docker — and every tool returns the same JSON envelope as the CLI.
+
+```bash
+.venv/Scripts/python.exe -m pip install -e ".[mcp]"   # adds mcp>=1.0
+prodromos-mcp                                          # stdio loop (blocking)
+```
+
+Register it with an MCP client (e.g. Claude Desktop `claude_desktop_config.json`
+or Claude Code):
+
+```json
+{
+  "mcpServers": {
+    "prodromos": { "command": "prodromos-mcp" }
+  }
+}
+```
+
+Main tools: **`plan`** (pre-flight orchestrator over a tm-spec/0.3 case or a raw
+QE/ABACUS input, auto-converted), **`from_inputs`** (onboard a QE/ABACUS input
+into a tm-spec/0.3 doc), plus one tool per gate: `electron_parity`,
+`spin_collapse`, `endpoint_provenance`, `symmetry_preflight`, `vfe_preflight`,
+`external_reference`, `lint_dft_script`, `h_barrier_readiness`, `neb_advisor`,
+`saddle_proximity`, `multi_endpoint`, `soap_cluster`, `master_equation`,
+`gp_neb`, `adaptive_neb`, `magnetic_parser`, `magnetic_endpoint`,
+`magnetic_band`, `magnetic_recommend`.
+
 ## Tests
 
 ```bash
-.venv/Scripts/python.exe -m pytest -q   # 349 passed, 4 skipped (data-gated)
+.venv/Scripts/python.exe -m pytest -q   # 448 passed (self-contained; bundled DFT fixtures)
 ```
 
 Toy-PES validation (Müller-Brown, LJ7, double-well) plus structural/magnetic gate
