@@ -100,11 +100,8 @@ def test_discover_band_outputs_sorts_image_directories():
             shutil.rmtree(tmp_root)
 
 
-@pytest.mark.requires_data
-def test_marc_tier1_band_corpus_if_available():
-    root = Path(r"D:\home\ignat\project-third-matter\results\dft_datasets\2026-05-28_marc_VFe_tier1_v4c\neb_done")
-    if not root.exists():
-        pytest.skip("local harvested DFT corpus is not available")
+def test_marc_tier1_band_corpus():
+    root = Path(__file__).parent / "fixtures" / "marc_tier1_band"
 
     result = analyze_band_images(load_band(root))
 

@@ -56,9 +56,10 @@ prodromos electron-parity --help  # any subcommand forwards to its own argparse
 ```
 
 Subcommands: `electron-parity`, `spin-collapse`, `saddle-proximity`,
-`symmetry-preflight`, `vfe-preflight`, `magnetic-parser`, `magnetic-endpoint`,
-`magnetic-band`, `magnetic-recommend`, `multi-endpoint`, `soap-cluster`,
-`adaptive-neb`, `neb-advisor`, `gp-neb`, `master-equation`.
+`endpoint-provenance`, `symmetry-preflight`, `vfe-preflight`, `magnetic-parser`,
+`magnetic-endpoint`, `magnetic-band`, `magnetic-recommend`, `multi-endpoint`,
+`soap-cluster`, `adaptive-neb`, `neb-advisor`, `gp-neb`, `master-equation`,
+`external-reference`, `lint-dft-script`, `h-barrier-readiness`.
 
 Every production-facing gate emits a stable JSON envelope (`tool`, `verdict`,
 `confidence`, `reasons`, `next_actions`, `artifacts`, `warnings`, `result`) via
@@ -68,7 +69,7 @@ Every production-facing gate emits a stable JSON envelope (`tool`, `verdict`,
 ## Tests
 
 ```bash
-.venv/Scripts/python.exe -m pytest -q   # 206 passed
+.venv/Scripts/python.exe -m pytest -q   # 349 passed, 4 skipped (data-gated)
 ```
 
 Toy-PES validation (Müller-Brown, LJ7, double-well) plus structural/magnetic gate

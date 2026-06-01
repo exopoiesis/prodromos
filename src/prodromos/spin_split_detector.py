@@ -1,7 +1,7 @@
 """
 $0 two-sheet toy + spin_split detector (Phase 3, task M3.K).
 
-Implements the consilium synthesis (MAGNETIC_NEB_CONSILIUM_2026-05-29.md):
+Implements the magnetic-NEB consilium synthesis:
   * CS toy:        two smooth spin sheets E0 (LS, m~1.13), E1 (HS, m~1.67);
                    spin-blind surrogate = lower-envelope leak -> band-collapse.
   * statmech:      per-image magnetization diagnostic (total + abs), threshold

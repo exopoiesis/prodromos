@@ -4,7 +4,7 @@ This tool ingests an NEB calculation's signature (band + optimizer history +
 geometry + optional freq/magnetic signals) as an already-computed ``case`` dict
 and recommends the right METHOD FAMILY (continue-NEB / stiffen / switch-optimizer
 / FixedLine / string / dimer-Sella / MECP / constrained-M / re-pick /
-multi-endpoint / fix-parity / report-converged), encoding the s156/s158 +
+multi-endpoint / fix-parity / report-converged), encoding the
 cross-mineral failure-mode lessons.
 
 Core principle (see NEB_METHOD_ADVISOR_DESIGN.md): the advisor is a ROUTER, NOT a
@@ -235,6 +235,8 @@ def run_neb_method_advisor(case: dict | None = None) -> dict:
     mlip_cross = dict(case.get("mlip_cross") or {})
     mechanism_hint = case.get("mechanism_hint")
     expected_range = case.get("expected_barrier_range_meV")
+    failure_signature_hint = case.get("failure_signature_hint")
+    endpoint_provenance = case.get("endpoint_provenance")  # N-02 advisory
 
     scf_noise_eff = float(scf_noise) if scf_noise is not None else SCF_NOISE_DEFAULT
     eps_e = max(5.0 * scf_noise_eff, EPS_E_FLOOR_EV)
@@ -314,13 +316,24 @@ def run_neb_method_advisor(case: dict | None = None) -> dict:
     def finish(verdict: str) -> dict:
         res.verdict = verdict
         _fill_barrier_status(res, barrier_converged, perp_below_target or floor_drops, barrier_eV, eps_e)
+        extra_warnings: list[str] = ["node-fmax is gauge-dependent; convergence judged on invariant metrics"]
+        # N-02 advisory: endpoint provenance check
+        if endpoint_provenance is not None and str(endpoint_provenance).lower() != "dft_relaxed":
+            extra_warnings.append(
+                "ENDPOINT PROVENANCE WARNING: endpoint_provenance is not 'dft_relaxed' "
+                f"(got '{endpoint_provenance}'). Single-point energies on a non-DFT-relaxed "
+                "geometry (grad V != 0) are NOT valid endpoint energies -- the global lattice "
+                "may be ~20 eV off even if local bond lengths look physical. "
+                "Run DFT ionic relaxation on the endpoint BEFORE using its energy for barrier "
+                "ranking or NEB setup. Use endpoint_provenance_gate.py for a full verdict."
+            )
         return response_envelope(
             tool=TOOL,
             verdict=res.verdict,
             confidence=res.confidence,
             reasons=res.reasons,
             next_actions=res.next_actions,
-            warnings=["node-fmax is gauge-dependent; convergence judged on invariant metrics"],
+            warnings=extra_warnings,
             result=res.to_dict(),
         )
 
@@ -447,6 +460,48 @@ def run_neb_method_advisor(case: dict | None = None) -> dict:
         res.excluded = ["CONVERGED_REPORT_BARRIER (ruled out by 4: endpoints are the same basin)"]
         res.gate_trace[-1] += ":REPICK_ENDPOINTS"
         return finish("REPICK_ENDPOINTS")
+    res.gate_trace[-1] += ":pass"
+
+    # --- Gate 4b: dimer + chemical-RC seed (N-12) ---------------------------
+    # Band-NEB on Fe-S V_Fe+H pockets repeatedly rolls off the ridge or freezes
+    # when the transition state manifold is degenerate (cubic symmetry, multi-site
+    # pocket). For signatures in this set, the correct escalation is DIMER with a
+    # chemical reaction coordinate seed -- NOT another band-tune.
+    _DIMER_RC_SIGNATURES = {"roll-off", "frozen-energy", "same-basin", "multi-site pocket"}
+    res.gate_trace.append("4b_dimer_chemical_rc")
+    if (
+        failure_signature_hint is not None
+        and str(failure_signature_hint).lower() in _DIMER_RC_SIGNATURES
+    ):
+        res.failure_mode = "dimer_chemical_rc_indicated"
+        res.confidence = "high"
+        sig = str(failure_signature_hint).lower()
+        res.reasons.append(
+            f"failure_signature_hint='{sig}' is in the dimer-chemical-RC set "
+            f"{sorted(_DIMER_RC_SIGNATURES)}: band-NEB has exhausted its optimizer "
+            f"space on this Fe-S V_Fe+H pocket (ridge degeneracy / symmetry-induced "
+            f"transition manifold). Further band-tuning will NOT converge."
+        )
+        res.reasons.append(
+            "Recipe: (1) form the unit H-transfer vector v = (S_k - S_i) / |S_k - S_i| "
+            "using minimum-image convention (MIC); (2) seed the dimer displacement along v "
+            "starting from the constrained-NEB midpoint or the highest-energy band image; "
+            "(3) run Sella/dimer with this chemical-RC seed to locate the true index-1 saddle."
+        )
+        res.cheapest_disambiguating_test = (
+            "seed Sella/dimer from unit H-vector S_i->S_k (MIC) at the NEB midpoint / "
+            "highest band image -- $0 MLIP dimer pilot to confirm index-1 before DFT"
+        )
+        res.do_not_do = [
+            "do NOT run another band-NEB with different k_spring or optimizer (already exhausted)",
+            "do NOT blame convergence on smearing/spin without verifying the RC first",
+        ]
+        res.verification_followup = [
+            "confirm index-1 via Hessian/freq after dimer convergence",
+            "check saddle_proximity_gate: d(H-S_i) vs d(H-S_k) asymmetry < 0.15 A",
+        ]
+        res.gate_trace[-1] += ":DIMER_CHEMICAL_RC"
+        return finish("DIMER_CHEMICAL_RC")
     res.gate_trace[-1] += ":pass"
 
     # --- Gate 5: gauge-invariant convergence --------------------------------

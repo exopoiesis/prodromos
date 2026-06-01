@@ -225,6 +225,75 @@ def _label_to_magnetization(label: str) -> float | None:
     return float(digits) / (10 ** (len(digits) - 1))
 
 
+# ---------------------------------------------------------------------------
+# N-14: within-method energy delta helper
+# ---------------------------------------------------------------------------
+
+class ProvenanceMismatchError(ValueError):
+    """Raised when two summaries carry incompatible provenance metadata.
+
+    DFT+U total energies are not on the same absolute scale as U=0 energies:
+    the double-counting correction shifts all levels by a U-dependent constant.
+    Any numeric energy difference between summaries with different (u_eff,
+    nspin, functional, ecut, kpts) is therefore meaningless.  This error
+    signals that the caller should not use the returned difference.
+    """
+
+    def __init__(self, mismatches: dict[str, tuple]) -> None:
+        self.mismatches = mismatches
+        parts = "; ".join(
+            f"{key}: {a!r} vs {b!r}" for key, (a, b) in sorted(mismatches.items())
+        )
+        super().__init__(f"PROVENANCE_MISMATCH — {parts}")
+
+
+def _provenance_key(summary: MagneticOutputSummary) -> dict[str, object]:
+    return {
+        "u_eff": summary.u_eff,
+        "nspin": summary.nspin,
+        "functional": summary.functional,
+        "ecut": summary.ecut,
+        "kpts": summary.kpts,
+    }
+
+
+def compute_within_method_delta(
+    summary_a: MagneticOutputSummary,
+    summary_b: MagneticOutputSummary,
+) -> float:
+    """Return ``energy_b - energy_a`` (eV) after asserting shared provenance.
+
+    Provenance dimensions compared: ``u_eff``, ``nspin``, ``functional``,
+    ``ecut``, ``kpts``.  A dimension is considered "unknown" when **both**
+    summaries report ``None`` for it — unknown-vs-unknown is allowed so that
+    callers do not need to populate every field.  A ``None`` on one side and
+    a concrete value on the other is treated as a mismatch, because it means
+    one calculation was run with a known setting while the other was not
+    (different run conditions).
+
+    Raises ``ProvenanceMismatchError`` (carries ``mismatches`` dict) if any
+    dimension differs.  The caller must not silently fall back to a numeric
+    result when this error is raised.
+
+    Raises ``ValueError`` if either summary is missing ``energy_eV``.
+    """
+    prov_a = _provenance_key(summary_a)
+    prov_b = _provenance_key(summary_b)
+    mismatches: dict[str, tuple] = {}
+    for key in prov_a:
+        va, vb = prov_a[key], prov_b[key]
+        if va != vb:
+            mismatches[key] = (va, vb)
+    if mismatches:
+        raise ProvenanceMismatchError(mismatches)
+
+    if summary_a.energy_eV is None or summary_b.energy_eV is None:
+        raise ValueError(
+            "compute_within_method_delta: one or both summaries have energy_eV=None"
+        )
+    return summary_b.energy_eV - summary_a.energy_eV
+
+
 def _band_missing_magnetization(result: BandGateResult) -> bool:
     return any(
         image.summary.total_magnetization_uB is None or image.summary.absolute_magnetization_uB is None

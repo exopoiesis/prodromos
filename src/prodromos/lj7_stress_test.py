@@ -10,7 +10,7 @@ Signals:
   * naive Cartesian L2 interp-barrier: linear-interpolate config_a -> config_b in
     raw 21-D coords, take max LJ energy. For a same-basin pair related by a
     rotation/permutation this passes through ATOMIC CLASHES -> huge FALSE barrier
-    -> would mis-flag same-basin as cross-basin. (This is exactly the s130-class
+    -> would mis-flag same-basin as cross-basin. (This is exactly a same-basin-class
     trap that bit us, generalised.)
   * internal fingerprint: sorted pairwise-distance vector (invariant to
     permutation/rotation/translation). Same basin -> ~0 distance; different

@@ -8,7 +8,7 @@ decide the operational question that actually drives the deploy choice:
     "Does the local TM moment COLLAPSE (so nspin=1 == nspin=2, smooth PES) or
      PERSIST (so the nspin=1 PES is pathological and nspin=2 is mandatory)?"
 
-This is exactly the flip-flop that burned sessions s156/s158: pyrite/mack collapse
+This is exactly the flip-flop seen across campaigns: pyrite/mack collapse
 (nspin=1 turned out fine), pentlandite persists (nspin=1 was wrong all along).
 The cheapest *decisive* experiment is ONE nspin=2 single-point: read the resulting
 absolute magnetization per TM atom and route on it.

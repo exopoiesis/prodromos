@@ -80,8 +80,93 @@ def find_qualifying_op(pristine_atoms, S_i, S_k, V_Fe, h_idx, endA_atoms, sympre
     return candidates
 
 
+# ---------------------------------------------------------------------------
+# N-05: Global-displacement guard
+# ---------------------------------------------------------------------------
+
+def compute_global_displacement_fraction(
+    costs_non_h: np.ndarray,
+    threshold_A: float = 1.0,
+) -> tuple[float, int]:
+    """Return (fraction, count) of non-H atoms displaced more than threshold_A."""
+    n = len(costs_non_h)
+    if n == 0:
+        return 0.0, 0
+    count = int((costs_non_h > threshold_A).sum())
+    fraction = count / n
+    return fraction, count
+
+
+# ---------------------------------------------------------------------------
+# N-06: Hungarian assignment audit
+# ---------------------------------------------------------------------------
+
+def build_assignment_log(
+    pos_target: np.ndarray,
+    perm: np.ndarray,
+    costs: np.ndarray,
+    symbols_target: list[str],
+    symbols_source: list[str],
+) -> list[dict]:
+    """
+    Return a human-readable list of {target_idx, source_idx, target_elem,
+    source_elem, distance_A} for every atom pair chosen by the Hungarian solver.
+    """
+    log = []
+    for target_i, (source_j, dist) in enumerate(zip(perm, costs)):
+        log.append({
+            "target_idx": int(target_i),
+            "source_idx": int(source_j),
+            "target_elem": symbols_target[target_i],
+            "source_elem": symbols_source[int(source_j)],
+            "distance_A": float(dist),
+        })
+    return log
+
+
+def check_assignment_stability(
+    pos_target: np.ndarray,
+    pos_source: np.ndarray,
+    symbols_target: list[str],
+    symbols_source: list[str],
+    cell: np.ndarray,
+    n_trials: int = 5,
+    jitter_sigma: float = 0.05,
+    rng: np.random.Generator | None = None,
+) -> tuple[bool, float]:
+    """
+    Re-run Hungarian matching after adding Gaussian jitter to source positions.
+
+    Returns (is_stable, instability_rate) where instability_rate is the fraction
+    of trials in which at least one atom was assigned differently.
+    """
+    if rng is None:
+        rng = np.random.default_rng(42)
+
+    perm_ref, _ = hungarian_match(pos_target, pos_source, symbols_target, symbols_source, cell)
+    unstable_count = 0
+    for _ in range(n_trials):
+        noise = rng.normal(0, jitter_sigma, pos_source.shape)
+        pos_jittered = pos_source + noise
+        perm_jittered, _ = hungarian_match(
+            pos_target, pos_jittered, symbols_target, symbols_source, cell
+        )
+        if not np.array_equal(perm_ref, perm_jittered):
+            unstable_count += 1
+
+    instability_rate = unstable_count / n_trials
+    is_stable = unstable_count == 0
+    return is_stable, instability_rate
+
+
 def run_test(mineral_name, pristine_path, endA_path, triple_path,
-             known_dft_barrier_meV=None):
+             known_dft_barrier_meV=None,
+             global_disp_threshold=0.3,
+             global_disp_per_atom_A=1.0,
+             log_assignment=False,
+             check_assignment_stability_flag=False,
+             jitter_sigma=0.05,
+             jitter_trials=5):
     print("\n" + "=" * 78)
     print(f"SYMMETRY PRE-FLIGHT: {mineral_name}")
     print("=" * 78)
@@ -162,6 +247,69 @@ def run_test(mineral_name, pristine_path, endA_path, triple_path,
         print(f"    Non-H >0.1 Å: {n_above_01}/{len(syms_endA)-1}")
         print(f"    Non-H >1.0 Å: {n_above_1}/{len(syms_endA)-1}")
 
+        # ---------------------------------------------------------------
+        # N-05: Global-displacement guard
+        # ---------------------------------------------------------------
+        n_non_h = len(non_h_costs)
+        gd_fraction, gd_count = compute_global_displacement_fraction(
+            non_h_costs, threshold_A=global_disp_per_atom_A
+        )
+        print(f"    Non-H >{global_disp_per_atom_A} Å fraction: {gd_fraction:.2%} ({gd_count}/{n_non_h})")
+
+        global_disp_warnings: list[str] = []
+        if gd_fraction > global_disp_threshold:
+            msg = (
+                f"Global displacement warning: {gd_fraction:.1%} of non-H atoms "
+                f"({gd_count}/{n_non_h}) are displaced >{global_disp_per_atom_A} Å. "
+                "Verify the endpoint is a DFT minimum before trusting the asymmetry "
+                "verdict — large global displacement may indicate a non-stationary "
+                "MLIP geometry, not true symmetry breaking."
+            )
+            global_disp_warnings.append(msg)
+            print(f"\n  *** WARNING: {msg}")
+
+        # ---------------------------------------------------------------
+        # N-06: Hungarian assignment audit
+        # ---------------------------------------------------------------
+        assignment_log: list[dict] | None = None
+        assignment_warnings: list[str] = []
+        artifacts: list[str] = []
+
+        if log_assignment:
+            syms_endA_list = list(syms_endA)
+            assignment_log = build_assignment_log(
+                endA.get_positions(),
+                perm_e,
+                costs_e,
+                syms_endA_list,
+                syms_endA_list,
+            )
+            artifacts.append("hungarian_assignment")
+            print(f"\n  [N-06] Hungarian assignment logged ({len(assignment_log)} pairs)")
+
+        if check_assignment_stability_flag:
+            pos_endA_rot_cart = pos_endA_rot  # Cartesian, already computed
+            is_stable, instability_rate = check_assignment_stability(
+                endA.get_positions(),
+                pos_endA_rot_cart,
+                list(syms_endA),
+                list(syms_endA),
+                cell,
+                n_trials=jitter_trials,
+                jitter_sigma=jitter_sigma,
+            )
+            if not is_stable:
+                warn_msg = (
+                    f"Hungarian assignment is unstable under {jitter_sigma} Å jitter "
+                    f"(changed in {instability_rate:.0%} of {jitter_trials} trials). "
+                    "The matching may be unreliable for this relaxed geometry — "
+                    "consider manually verifying that S-anchors map to S-anchors."
+                )
+                assignment_warnings.append(warn_msg)
+                print(f"\n  *** WARNING: {warn_msg}")
+            else:
+                print(f"  [N-06] Assignment stable under {jitter_sigma} Å jitter ({jitter_trials} trials)")
+
         # Verdict
         if max_e < 0.1:
             verdict = "SYMMETRIC ✓"
@@ -183,7 +331,7 @@ def run_test(mineral_name, pristine_path, endA_path, triple_path,
         else:
             print(f"  GROUND TRUTH: unknown — this is PREDICTION")
 
-        return {
+        result: dict = {
             "mineral": mineral_name,
             "space_group": sym_data.international,
             "n_atoms": len(endA),
@@ -196,7 +344,28 @@ def run_test(mineral_name, pristine_path, endA_path, triple_path,
             "verdict": verdict,
             "prediction": pred,
             "known_barrier_meV": known_dft_barrier_meV,
+            # N-05 fields
+            "global_disp_fraction": gd_fraction,
+            "global_disp_count": gd_count,
+            "global_disp_threshold": global_disp_threshold,
+            "global_disp_per_atom_A": global_disp_per_atom_A,
         }
+
+        # Attach N-06 assignment log if requested
+        if log_assignment and assignment_log is not None:
+            result["hungarian_assignment"] = assignment_log
+
+        # Attach stability info if checked
+        if check_assignment_stability_flag:
+            result["assignment_stable"] = is_stable
+            result["assignment_instability_rate"] = instability_rate
+
+        # Collect all warnings
+        all_warnings = global_disp_warnings + assignment_warnings
+        result["warnings"] = all_warnings
+        result["artifacts"] = artifacts
+
+        return result
 
     return {"mineral": mineral_name, "status": "NO_QUALIFYING_OP"}
 
@@ -205,44 +374,44 @@ def run_test(mineral_name, pristine_path, endA_path, triple_path,
 CASES = [
     {
         "name": "mack W4 V_Fe (known 43 meV)",
-        "pristine": r"D:\home\ignat\project-third-matter\results\dft_datasets\2026-05-03\mack_vfe_w3_aborted_2026-05-03\neb_canonical_mack_72at_qe_VFe\relaxed_pristine.xyz",
-        "endA": r"D:\home\ignat\project-third-matter\results\dft_datasets\2026-05-03\mack_vfe_w3_aborted_2026-05-03\neb_canonical_mack_72at_qe_VFe\relaxed_endA.xyz",
-        "triple": r"D:\home\ignat\project-third-matter\results\dft_datasets\2026-05-03\mack_vfe_w3_aborted_2026-05-03\neb_canonical_mack_72at_qe_VFe\canonical_triple.json",
+        "pristine": r"results\dft_datasets\2026-05-03\mack_vfe_w3_aborted_2026-05-03\neb_canonical_mack_72at_qe_VFe\relaxed_pristine.xyz",
+        "endA": r"results\dft_datasets\2026-05-03\mack_vfe_w3_aborted_2026-05-03\neb_canonical_mack_72at_qe_VFe\relaxed_endA.xyz",
+        "triple": r"results\dft_datasets\2026-05-03\mack_vfe_w3_aborted_2026-05-03\neb_canonical_mack_72at_qe_VFe\canonical_triple.json",
         "barrier_meV": 43.0,
     },
     {
         "name": "greig W2 V_Fe (known 1861 meV)",
-        "pristine": r"D:\home\ignat\project-third-matter\results\dft_datasets\2026-05-27\w2_greigite_full_neb\greig_neb_full_s150\relaxed_pristine.xyz",
-        "endA": r"D:\home\ignat\project-third-matter\results\dft_datasets\2026-05-27\w2_greigite_full_neb\greig_neb_full_s150\relaxed_endA.xyz",
-        "triple": r"D:\home\ignat\project-third-matter\results\dft_datasets\2026-05-27\w2_greigite_full_neb\greig_neb_full_s150\canonical_triple.json",
+        "pristine": r"results\dft_datasets\2026-05-27\w2_greigite_full_neb\greig_neb_full_s150\relaxed_pristine.xyz",
+        "endA": r"results\dft_datasets\2026-05-27\w2_greigite_full_neb\greig_neb_full_s150\relaxed_endA.xyz",
+        "triple": r"results\dft_datasets\2026-05-27\w2_greigite_full_neb\greig_neb_full_s150\canonical_triple.json",
         "barrier_meV": 1861.0,
     },
     {
         "name": "pent W3 V_Fe (PREDICTION — DEFERRED)",
-        "pristine": r"D:\home\ignat\project-third-matter\results\dft_datasets\2026-05-10\w3_pent_136at_qe_VFe\prod_dir\relaxed_pristine.xyz",
-        "endA": r"D:\home\ignat\project-third-matter\results\dft_datasets\2026-05-10\w3_pent_136at_qe_VFe\prod_dir\relaxed_endA.xyz",
-        "triple": r"D:\home\ignat\project-third-matter\results\dft_datasets\2026-05-10\w3_pent_136at_qe_VFe\prod_dir\canonical_triple.json",
+        "pristine": r"results\dft_datasets\2026-05-10\w3_pent_136at_qe_VFe\prod_dir\relaxed_pristine.xyz",
+        "endA": r"results\dft_datasets\2026-05-10\w3_pent_136at_qe_VFe\prod_dir\relaxed_endA.xyz",
+        "triple": r"results\dft_datasets\2026-05-10\w3_pent_136at_qe_VFe\prod_dir\canonical_triple.json",
         "barrier_meV": None,  # this is the prediction case we already tested
     },
     {
         "name": "pyr V_S2 (known 94.6 meV)",
-        "pristine": r"D:\home\ignat\project-third-matter\results\dft_datasets\2026-05-01\pyr_prod_neb_W3\prod_essentials\relaxed_pristine.xyz",
-        "endA": r"D:\home\ignat\project-third-matter\results\dft_datasets\2026-05-01\pyr_prod_neb_W3\prod_essentials\relaxed_endA.xyz",
-        "triple": r"D:\home\ignat\project-third-matter\results\dft_datasets\2026-05-01\pyr_prod_neb_W3\prod_essentials\canonical_triple.json",
+        "pristine": r"results\dft_datasets\2026-05-01\pyr_prod_neb_W3\prod_essentials\relaxed_pristine.xyz",
+        "endA": r"results\dft_datasets\2026-05-01\pyr_prod_neb_W3\prod_essentials\relaxed_endA.xyz",
+        "triple": r"results\dft_datasets\2026-05-01\pyr_prod_neb_W3\prod_essentials\canonical_triple.json",
         "barrier_meV": 94.6,
     },
     {
         "name": "pyr V_Fe W2 Tier1 (LIVE TEST — pre-committed prediction 0.05-0.15 Å)",
-        "pristine": r"D:\home\ignat\project-third-matter\results\dft_datasets\2026-05-28\pyr_VFe_W2_tier1\neb_canonical_pyr_96at_qe_VFe\relaxed_pristine.xyz",
-        "endA": r"D:\home\ignat\project-third-matter\results\dft_datasets\2026-05-28\pyr_VFe_W2_tier1\neb_canonical_pyr_96at_qe_VFe\relaxed_endA.xyz",
-        "triple": r"D:\home\ignat\project-third-matter\results\dft_datasets\2026-05-28\pyr_VFe_W2_tier1\neb_canonical_pyr_96at_qe_VFe\canonical_triple.json",
+        "pristine": r"results\dft_datasets\2026-05-28\pyr_VFe_W2_tier1\neb_canonical_pyr_96at_qe_VFe\relaxed_pristine.xyz",
+        "endA": r"results\dft_datasets\2026-05-28\pyr_VFe_W2_tier1\neb_canonical_pyr_96at_qe_VFe\relaxed_endA.xyz",
+        "triple": r"results\dft_datasets\2026-05-28\pyr_VFe_W2_tier1\neb_canonical_pyr_96at_qe_VFe\canonical_triple.json",
         "barrier_meV": None,  # NEB not yet run; ΔE_endpoints = 0.0000 known
     },
     {
         "name": "marc V_S smoke (NEB status=ok, V_S vacancy)",
-        "pristine": r"D:\home\ignat\project-third-matter\results\dft_datasets\2026-05-18_marcasite_smoke_w1\marc_smoke\relaxed_pristine.xyz",
-        "endA": r"D:\home\ignat\project-third-matter\results\dft_datasets\2026-05-18_marcasite_smoke_w1\marc_smoke\relaxed_endA.xyz",
-        "triple": r"D:\home\ignat\project-third-matter\results\dft_datasets\2026-05-18_marcasite_smoke_w1\marc_smoke\canonical_triple.json",
+        "pristine": r"results\dft_datasets\2026-05-18_marcasite_smoke_w1\marc_smoke\relaxed_pristine.xyz",
+        "endA": r"results\dft_datasets\2026-05-18_marcasite_smoke_w1\marc_smoke\relaxed_endA.xyz",
+        "triple": r"results\dft_datasets\2026-05-18_marcasite_smoke_w1\marc_smoke\canonical_triple.json",
         "barrier_meV": None,
     },
 ]
@@ -255,25 +424,32 @@ def run_symmetry_l1(
     mineral_name="system",
     known_dft_barrier_meV=None,
     verbose=False,
+    global_disp_threshold=0.3,
+    global_disp_per_atom_A=1.0,
+    log_assignment=False,
+    check_assignment_stability_flag=False,
+    jitter_sigma=0.05,
+    jitter_trials=5,
 ) -> dict:
     """Run the L1 symmetry gate and return an MCP-shaped envelope."""
+    _run = lambda: run_test(
+        mineral_name,
+        pristine_path,
+        end_a_path,
+        triple_path,
+        known_dft_barrier_meV,
+        global_disp_threshold=global_disp_threshold,
+        global_disp_per_atom_A=global_disp_per_atom_A,
+        log_assignment=log_assignment,
+        check_assignment_stability_flag=check_assignment_stability_flag,
+        jitter_sigma=jitter_sigma,
+        jitter_trials=jitter_trials,
+    )
     if verbose:
-        result = run_test(
-            mineral_name,
-            pristine_path,
-            end_a_path,
-            triple_path,
-            known_dft_barrier_meV,
-        )
+        result = _run()
     else:
         with contextlib.redirect_stdout(io.StringIO()):
-            result = run_test(
-                mineral_name,
-                pristine_path,
-                end_a_path,
-                triple_path,
-                known_dft_barrier_meV,
-            )
+            result = _run()
 
     verdict = result.get("verdict") or result.get("status", "UNKNOWN")
     confidence = "high" if "SYMMETRIC" in verdict or "ASYMMETRY" in verdict else "review"
@@ -289,6 +465,10 @@ def run_symmetry_l1(
     else:
         next_actions.append("continue to magnetic gates before launching NEB")
 
+    # Pass through N-05 / N-06 warnings from result into envelope
+    extra_warnings = result.get("warnings", [])
+    extra_artifacts = result.get("artifacts", [])
+
     return response_envelope(
         tool="run_symmetry_l1",
         verdict=verdict,
@@ -296,6 +476,8 @@ def run_symmetry_l1(
         reasons=reasons,
         next_actions=next_actions,
         result=result,
+        warnings=extra_warnings,
+        artifacts=extra_artifacts,
     )
 
 
@@ -330,7 +512,7 @@ def run_validation_set(json_output=False, output=None):
             print(f"{r['mineral']:<40s} {'ERROR':>12s} {r.get('status', '?'):>20s}")
 
     # Save results
-    out_path = Path(r"D:\home\ignat\project-third-matter\dft-neb\ph-diagnostic\symmetry_preflight_results.json")
+    out_path = Path("symmetry_preflight_results.json")
     with open(out_path, "w") as f:
         json.dump(all_results, f, indent=2, default=str)
     print(f"\nSaved: {out_path}")
@@ -363,6 +545,44 @@ def main(argv: list[str] | None = None):
         action="store_true",
         help="Run the local validation set with historical hardcoded paths",
     )
+    # N-05 options
+    parser.add_argument(
+        "--global-disp-threshold",
+        type=float,
+        default=0.3,
+        help="Fraction of non-H atoms displaced >global-disp-per-atom-A that triggers WARNING (default 0.3)",
+    )
+    parser.add_argument(
+        "--global-disp-per-atom-A",
+        type=float,
+        default=1.0,
+        help="Per-atom displacement cutoff in Angstroms for N-05 global guard (default 1.0)",
+    )
+    # N-06 options
+    parser.add_argument(
+        "--log-assignment",
+        action="store_true",
+        default=False,
+        help="Dump Hungarian atom-to-atom assignment (index, element, distance) into result",
+    )
+    parser.add_argument(
+        "--check-assignment-stability",
+        action="store_true",
+        default=False,
+        help="Verify assignment is stable under small coordinate jitter; warns if unstable",
+    )
+    parser.add_argument(
+        "--jitter-sigma",
+        type=float,
+        default=0.05,
+        help="Std-dev of Gaussian jitter in Angstroms for stability check (default 0.05)",
+    )
+    parser.add_argument(
+        "--jitter-trials",
+        type=int,
+        default=5,
+        help="Number of jitter trials for stability check (default 5)",
+    )
     args = parser.parse_args(argv)
 
     if args.validation:
@@ -378,6 +598,12 @@ def main(argv: list[str] | None = None):
         mineral_name=args.name,
         known_dft_barrier_meV=args.barrier_mev,
         verbose=not args.json,
+        global_disp_threshold=args.global_disp_threshold,
+        global_disp_per_atom_A=args.global_disp_per_atom_A,
+        log_assignment=args.log_assignment,
+        check_assignment_stability_flag=args.check_assignment_stability,
+        jitter_sigma=args.jitter_sigma,
+        jitter_trials=args.jitter_trials,
     )
     if args.output:
         dump_json(envelope, args.output)

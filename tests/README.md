@@ -2,12 +2,11 @@
 
 ## Setup
 
-```bash
-cd D:/home/ignat/project-third-matter/dft-neb/ph-diagnostic
-.venv/Scripts/python.exe -m pytest tests/ -v
-```
+From the repository root, with the package installed editable (`pip install -e ".[dev]"`):
 
-Or: `bash tmp/pytest_run.sh`
+```bash
+.venv/Scripts/python.exe -m pytest -q
+```
 
 ## Test Files
 

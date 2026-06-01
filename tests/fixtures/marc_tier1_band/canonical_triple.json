@@ -1,0 +1,18 @@
+{
+  "vacancy_kind": "V_Fe",
+  "V_Fe_index": 84,
+  "S_i_index": 15,
+  "S_k_index": 35,
+  "S_neighbours": [
+    15,
+    86,
+    35,
+    41,
+    58,
+    64
+  ],
+  "hop_distance_A": 3.2198812886614303,
+  "fe_s_max": 2.8,
+  "n_atoms_pristine": 96,
+  "mineral": "marcasite"
+}

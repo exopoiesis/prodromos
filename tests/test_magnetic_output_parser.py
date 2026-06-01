@@ -147,11 +147,8 @@ def test_engine_detection_for_known_markers():
     assert detect_engine("x.out", "FillingsUpdate magneticMoment: [ Abs: 1 Tot: 0 ]") == "jdftx"
 
 
-@pytest.mark.requires_data
-def test_marc_spin_diagnostic_qe_corpus_if_available():
-    root = Path(r"D:\home\ignat\project-third-matter\results\dft_datasets\2026-05-29\marc_VFe_spin_diagnostic")
-    if not root.exists():
-        pytest.skip("local harvested DFT corpus is not available")
+def test_marc_spin_diagnostic_qe_corpus():
+    root = Path(__file__).parent / "fixtures" / "marc_spin_diagnostic"
 
     expected = {
         "marc_endA_m113.pwo": (1.13, 2.43),
@@ -174,3 +171,91 @@ def test_marc_spin_diagnostic_qe_corpus_if_available():
     assert truncated.scf_converged is False
     assert truncated.job_done is False
     assert any("last SCF iteration" in warning for warning in truncated.warnings)
+
+
+# ---------------------------------------------------------------------------
+# N-14: provenance extraction tests
+# ---------------------------------------------------------------------------
+
+def _qe_text_with_provenance(
+    *,
+    ecut=70.0,
+    functional="PBE",
+    u_line="",
+    kpts_block="K_POINTS automatic\n  6 6 6  0 0 0\n",
+    energy=-11.0,
+    total=1.13,
+    absolute=2.43,
+):
+    return f"""
+     Program PWSCF
+     kinetic-energy cutoff     =  {ecut:.4f}  Ry
+     Exchange-correlation= {functional}  ( 1  4  3  4 0 0)
+{kpts_block}
+{u_line}
+     !    total energy              =   {energy:.8f} Ry
+          total magnetization       =   {total:.2f} Bohr mag/cell
+          absolute magnetization    =   {absolute:.2f} Bohr mag/cell
+     convergence has been achieved
+     JOB DONE.
+    """
+
+
+def test_qe_parser_extracts_ecut_and_functional():
+    text = _qe_text_with_provenance(ecut=80.0, functional="PBE")
+    summary = parse_qe_output("sample.pwo", text)
+    assert summary.ecut == pytest.approx(80.0)
+    assert summary.functional == "PBE"
+
+
+def test_qe_parser_extracts_automatic_kpts():
+    text = _qe_text_with_provenance(kpts_block="K_POINTS automatic\n  4 4 4  1 1 1\n")
+    summary = parse_qe_output("sample.pwo", text)
+    assert summary.kpts is not None
+    assert "automatic" in summary.kpts
+    assert "4 4 4" in summary.kpts
+
+
+def test_qe_parser_extracts_gamma_kpts():
+    text = _qe_text_with_provenance(kpts_block="K_POINTS gamma\n")
+    summary = parse_qe_output("sample.pwo", text)
+    assert summary.kpts == "gamma"
+
+
+def test_qe_parser_extracts_u_eff_from_hubbard_card():
+    # QE 7.x HUBBARD card style
+    text = _qe_text_with_provenance(
+        u_line="U Fe-3d  4.3\n"
+    )
+    summary = parse_qe_output("sample.pwo", text)
+    assert summary.u_eff == pytest.approx(4.3)
+
+
+def test_qe_parser_extracts_u_eff_from_legacy_namelist():
+    text = _qe_text_with_provenance(
+        u_line="Hubbard_U(1) = 4.0\n"
+    )
+    summary = parse_qe_output("sample.pwo", text)
+    assert summary.u_eff == pytest.approx(4.0)
+
+
+def test_qe_parser_u_eff_none_when_absent():
+    text = _qe_text_with_provenance()  # no U line
+    summary = parse_qe_output("sample.pwo", text)
+    assert summary.u_eff is None
+
+
+def test_qe_parser_provenance_fields_none_when_absent():
+    # Minimal output: no kinetic-energy, no Exchange-correlation, no K_POINTS
+    text = """
+     Program PWSCF
+     !    total energy              =   -11.00000000 Ry
+          total magnetization       =     1.13 Bohr mag/cell
+          absolute magnetization    =     2.43 Bohr mag/cell
+     convergence has been achieved
+    """
+    summary = parse_qe_output("sample.pwo", text)
+    assert summary.ecut is None
+    assert summary.functional is None
+    assert summary.kpts is None
+    assert summary.u_eff is None

@@ -14,6 +14,7 @@ SUBCOMMANDS: dict[str, str] = {
     "electron-parity": "prodromos.electron_parity_gate",
     "spin-collapse": "prodromos.spin_collapse_verdict",
     "saddle-proximity": "prodromos.saddle_proximity_gate",
+    "endpoint-provenance": "prodromos.endpoint_provenance_gate",
     "symmetry-preflight": "prodromos.symmetry_preflight_general",
     "vfe-preflight": "prodromos.vfe_neb_preflight",
     "magnetic-parser": "prodromos.magnetic_output_parser",
@@ -26,6 +27,9 @@ SUBCOMMANDS: dict[str, str] = {
     "neb-advisor": "prodromos.neb_method_advisor",
     "gp-neb": "prodromos.gp_neb_surrogate",
     "master-equation": "prodromos.master_equation_kinetics",
+    "external-reference": "prodromos.external_reference_gate",
+    "lint-dft-script": "prodromos.lint_dft_script",
+    "h-barrier-readiness": "prodromos.h_barrier_paper_readiness",
 }
 
 

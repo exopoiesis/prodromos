@@ -213,7 +213,7 @@ def plot_results(results_dict, out_path):
 
 
 def main():
-    out_dir = Path(r"D:\home\ignat\project-third-matter\dft-neb\ph-diagnostic\string_method_results")
+    out_dir = Path("string_method_results")
     out_dir.mkdir(parents=True, exist_ok=True)
 
     all_results = {}

@@ -53,11 +53,8 @@ def test_endpoint_gate_review_when_magnetization_missing():
     assert result.delta_total_uB is None
 
 
-@pytest.mark.requires_data
-def test_marc_spin_diagnostic_endpoint_gate_if_available():
-    root = Path(r"D:\home\ignat\project-third-matter\results\dft_datasets\2026-05-29\marc_VFe_spin_diagnostic")
-    if not root.exists():
-        pytest.skip("local harvested DFT corpus is not available")
+def test_marc_spin_diagnostic_endpoint_gate():
+    root = Path(__file__).parent / "fixtures" / "marc_spin_diagnostic"
 
     same_sheet = endpoint_magnetic_gate(
         parse_output_file(root / "marc_endA_m113.pwo"),

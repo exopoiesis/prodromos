@@ -2,7 +2,7 @@
 MECP finder (Bearpark-Robb-Schlegel 1994 gradient projection) — M3.K core.
 
 For a codim-1 spin-multiplicity crossing (NO derivative coupling without SOC,
-per the math consilium MAGNETIC_NEB_CONSILIUM_2026-05-29.md), the relevant
+per a magnetic-NEB consilium), the relevant
 "barrier" when the MEP changes spin sheet is the MINIMUM ENERGY CROSSING POINT,
 not an ordinary saddle. Bearpark-Robb projected gradient:
 

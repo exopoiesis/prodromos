@@ -13,7 +13,7 @@ from prodromos.electron_parity_gate import (
 
 
 def test_pyrite_endpoint_odd_is_nspin2_mandatory():
-    # Fe31 S64 H1: 31*16 + 64*6 + 1 = 881 -> ODD (the s158 blocker)
+    # Fe31 S64 H1: 31*16 + 64*6 + 1 = 881 -> ODD (the odd-electron blocker)
     env = run_electron_parity_gate({"Fe": 31, "S": 64, "H": 1})
     assert env["verdict"] == "NSPIN2_MANDATORY"
     assert env["confidence"] == "high"
@@ -87,11 +87,8 @@ def test_valence_override_parser():
     assert parse_valence_overrides(["Fe=16", "S=6"]) == {"Fe": 16, "S": 6}
 
 
-@pytest.mark.requires_data
-def test_real_pyrite_endpoint_vs_pristine_if_available():
-    base = Path(r"D:\home\ignat\project-third-matter\results\dft_datasets\2026-05-29\pyr_VFe_W2_complete\prod_essentials")
-    if not (base / "relaxed_endA.xyz").exists():
-        pytest.skip("local harvested pyrite corpus not available")
+def test_real_pyrite_endpoint_vs_pristine():
+    base = Path(__file__).parent / "fixtures" / "pyr_VFe"
     endA = run_electron_parity_gate(counts_from_structure(base / "relaxed_endA.xyz"))
     assert endA["verdict"] == "NSPIN2_MANDATORY"   # the trap: H makes it odd
     pristine = run_electron_parity_gate(counts_from_structure(base / "relaxed_pristine.xyz"))

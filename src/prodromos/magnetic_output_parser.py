@@ -23,7 +23,7 @@ HA_TO_EV = 27.211386245988
 # total/absolute magnetization is still drifting. These tolerances mirror the
 # magnetic_endpoint_gate thresholds (|dMtot|>0.3, |dMabs|>0.5 uB): a residual
 # per-step drift comparable to those thresholds means the parsed moment cannot
-# be trusted to gate-level precision. (s159 pent L4: conv_thr=1e-3 screen.)
+# be trusted to gate-level precision. (observed in a pentlandite L4 screen with conv_thr=1e-3.)
 MTOT_DRIFT_TOL_UB = 0.1
 MABS_DRIFT_TOL_UB = 0.5
 MAG_DRIFT_WINDOW = 3
@@ -58,6 +58,14 @@ class MagneticOutputSummary:
     local_moments: list[LocalMoment] = field(default_factory=list)
     nspin: int | None = None
     warnings: list[str] = field(default_factory=list)
+    # --- N-14 provenance fields ---
+    # Extracted from the output or input file when available; None otherwise.
+    # Used by compute_within_method_delta to prevent cross-method energy comparisons
+    # (e.g. DFT+U energies are not on the same absolute scale as U=0 energies).
+    u_eff: float | None = None          # Hubbard U_eff (eV) for first magnetic species; None if absent
+    functional: str | None = None       # XC functional label as reported (e.g. "PBE", "PBE+U")
+    ecut: float | None = None           # ecutwfc in Ry (QE convention); None if not found
+    kpts: str | None = None             # K_POINTS line/block summary string; None if not found
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -121,6 +129,98 @@ def _first_int(pattern: str, text: str, flags: int = re.IGNORECASE) -> int | Non
     return int(match.group(1)) if match else None
 
 
+def _first_float(pattern: str, text: str, flags: int = re.IGNORECASE) -> float | None:
+    match = re.search(pattern, text, flags)
+    if not match:
+        return None
+    value = match.group(1)
+    if isinstance(value, tuple):
+        value = value[0]
+    return float(value)
+
+
+# ---------------------------------------------------------------------------
+# N-14: provenance extraction helpers
+# ---------------------------------------------------------------------------
+
+def _extract_qe_u_eff(text: str) -> float | None:
+    """Return the first Hubbard U value (eV) found in the text, or None.
+
+    Handles both the legacy ``lda_plus_u`` / ``Hubbard_U(N) = X`` namelist
+    style and the QE 7.x HUBBARD card style.  Only the first non-zero entry is
+    returned because the goal is to distinguish U=0 vs U>0 provenance.
+    """
+    # QE 7.x HUBBARD card: "U Fe-3d  4.0" or "U Fe  4.00"
+    for m in re.finditer(r"^\s*U\s+\S+\s+(" + _FLOAT + r")", text, re.IGNORECASE | re.MULTILINE):
+        val = float(m.group(1))
+        if val != 0.0:
+            return val
+    # Legacy namelist: Hubbard_U(1) = 4.0  or  U(1) = 4.0
+    for m in re.finditer(r"Hubbard_U\s*\(\d+\)\s*=\s*(" + _FLOAT + r")", text, re.IGNORECASE):
+        val = float(m.group(1))
+        if val != 0.0:
+            return val
+    # Summary line printed by pw.x at runtime: "Hubbard U Fe :  4.00 (ev)"
+    for m in re.finditer(r"Hubbard\s+U\s+\S+\s*:\s*(" + _FLOAT + r")", text, re.IGNORECASE):
+        val = float(m.group(1))
+        if val != 0.0:
+            return val
+    return None
+
+
+def _extract_qe_functional(text: str) -> str | None:
+    """Extract the XC functional label as pw.x reports it (e.g. ``PBE``)."""
+    # Runtime print: "     Exchange-correlation= PBE  ( 1  4  3  4 0 0)"
+    m = re.search(r"Exchange-correlation\s*=\s*([A-Z0-9+\-]+)", text, re.IGNORECASE)
+    if m:
+        return m.group(1).upper()
+    # Input keyword: input_dft = 'pbe'
+    m = re.search(r"\binput_dft\s*=\s*['\"]?([A-Z0-9+\-]+)['\"]?", text, re.IGNORECASE)
+    if m:
+        return m.group(1).upper()
+    return None
+
+
+def _extract_qe_ecut(text: str) -> float | None:
+    """Return ecutwfc in Ry as printed by pw.x or as set in the input."""
+    # Runtime: "     kinetic-energy cutoff     =      70.0000  Ry"
+    m = re.search(r"kinetic-energy\s+cutoff\s*=\s*(" + _FLOAT + r")\s+Ry", text, re.IGNORECASE)
+    if m:
+        return float(m.group(1))
+    # Input: ecutwfc = 70.0
+    m = re.search(r"\becutwfc\s*=\s*(" + _FLOAT + r")", text, re.IGNORECASE)
+    if m:
+        return float(m.group(1))
+    return None
+
+
+def _extract_qe_kpts(text: str) -> str | None:
+    """Return a compact summary of the K_POINTS block, or None if not found.
+
+    For automatic meshes ("automatic") the mesh string "N N N S S S" is
+    returned.  For other modes (tpiba, crystal, etc.) the mode name plus the
+    number of k-points is returned.  The result is used only for equality
+    comparison inside the provenance guard, not for numerical work.
+    """
+    # Runtime: "     number of k points=     8  Marzari-Vanderbilt ..."
+    m = re.search(r"number of k points\s*=\s*(\d+)", text, re.IGNORECASE)
+    if m:
+        nk = m.group(1)
+        # Try to also get the mesh if available
+        mesh = re.search(r"K_POINTS\s+automatic\s*\n\s*([\d\s]+)", text, re.IGNORECASE)
+        if mesh:
+            return "automatic " + mesh.group(1).strip()
+        return f"nk={nk}"
+    # Input block: K_POINTS automatic\n  N M L S1 S2 S3
+    m = re.search(r"K_POINTS\s+automatic\s*\n\s*([\d\s]+)", text, re.IGNORECASE)
+    if m:
+        return "automatic " + m.group(1).strip()
+    # Gamma only
+    if re.search(r"K_POINTS\s+gamma", text, re.IGNORECASE):
+        return "gamma"
+    return None
+
+
 def parse_qe_output(path: str | Path, text: str) -> MagneticOutputSummary:
     warnings: list[str] = []
     energy_ry = _last_float(r"!\s+total energy\s+=\s+(" + _FLOAT + r")\s+Ry", text)
@@ -166,6 +266,11 @@ def parse_qe_output(path: str | Path, text: str) -> MagneticOutputSummary:
         local_moments=_parse_qe_local_moments(text),
         nspin=nspin,
         warnings=warnings,
+        # N-14 provenance
+        u_eff=_extract_qe_u_eff(text),
+        functional=_extract_qe_functional(text),
+        ecut=_extract_qe_ecut(text),
+        kpts=_extract_qe_kpts(text),
     )
 
 

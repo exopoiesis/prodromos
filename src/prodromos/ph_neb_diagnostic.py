@@ -1,7 +1,7 @@
 """
 Persistent Homology diagnostic for NEB same-basin detection.
 
-Task P0-A from ROADMAP_NEB_GT_THEORY.md.
+Task P0-A of the project roadmap.
 Foundation: GAME_THEORETIC_NEB_FOUNDATIONS.md §2.
 
 Idea: given an ensemble of points (x_i, V_i) sampled around a candidate

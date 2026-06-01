@@ -11,7 +11,7 @@ Physics (rigorous):
       * N_e ODD  -> S is half-integer -> total magnetization is an ODD integer
                     (>=1 uB). nspin=1 (which forces S=0) is MATHEMATICALLY
                     IMPOSSIBLE -> QE smears a half-electron at E_F -> flat/noisy
-                    PES (the s156/s158 pyrite "frozen energy" failure mode).
+                    PES (a documented pyrite "frozen energy" failure mode).
       * N_e EVEN -> S integer. nspin=1 is *allowed by parity*, but an
                     open-shell TM (Fe/Co/Ni/Mn/...) can still order AFM/FM, so
                     nspin=2 is RECOMMENDED and must be verified by the magnetic
@@ -56,10 +56,17 @@ def run_electron_parity_gate(
     symbol_counts: dict[str, int],
     charge: float = 0.0,
     valence_overrides: dict[str, int] | None = None,
+    metallic: bool = False,
+    smearing: str | None = None,
 ) -> dict:
     """Core gate. `symbol_counts` e.g. {'Fe': 31, 'S': 64, 'H': 1}.
 
     `charge` = net cell charge in units of e (positive = electrons removed).
+    `metallic` = True if the system is treated with metallic smearing
+    (occupations='smearing' in QE). When True and verdict is NSPIN2_MANDATORY,
+    an additional collapse-test spec is emitted in next_actions.
+    `smearing` = smearing type string (e.g. 'gaussian', 'cold', 'mv'); if
+    provided it is treated as equivalent to metallic=True.
     Returns a response_envelope dict.
     """
     valence = dict(DEFAULT_VALENCE)
@@ -93,6 +100,9 @@ def run_electron_parity_gate(
     tms = sorted(s for s in symbol_counts if s in OPEN_SHELL_TM)
     has_tm = bool(tms)
 
+    # detect whether a metallic/smearing context was signalled
+    _is_metallic = metallic or (smearing is not None and smearing.strip() != "")
+
     if parity == "odd":
         verdict = "NSPIN2_MANDATORY"
         confidence = "high"
@@ -103,12 +113,21 @@ def run_electron_parity_gate(
             f"N_e={n_e_int} is ODD -> S is half-integer. With FIXED occupations (insulator) "
             f"nspin=1 forces S=0 and is impossible. With metallic SMEARING the half-electron "
             f"is smeared at E_F, so nspin=1 is acceptable IF the system is genuinely non-magnetic "
-            f"(moment collapses to 0) -- verify cheaply. (s158 pyrite V_Fe+H: odd but smeared -> "
+            f"(moment collapses to 0) -- verify cheaply. (pyrite V_Fe+H: odd but smeared -> "
             f"non-magnetic -> nspin=1 was correct.)"
         )
         next_actions.append("run a cheap nspin=2 single-point with seeded starting_magnetization")
         next_actions.append("if the seeded moment COLLAPSES to ~0 (metallic, smeared) -> nspin=1 OK; "
                             "if a LOCALIZED moment persists -> nspin=2 (re-relax endpoints) mandatory")
+        if _is_metallic:
+            # N-08: ready-to-run collapse-test spec for metallic/smearing context
+            next_actions.append(
+                "COLLAPSE TEST (metallic/smearing context): run 1 nspin=2 U=0 single-point with "
+                "seeded starting_magnetization on this endpoint; if |Mtot|,|Mabs| -> 0 then "
+                "nspin=1 certified (use spin_collapse_verdict.py: check magnetization_settled "
+                "field -- NSPIN1_OK when mabs_per_tm < 0.30 uB/TM), else re-do the barrier "
+                "at nspin=2. See spin_collapse_verdict.magnetization_settled for interpretation."
+            )
         if has_tm:
             next_actions.append(f"seed/inspect local moments on {', '.join(tms)} (AFM vs FM)")
         next_actions.append("re-relax endpoints at nspin=2 (nspin=1-relaxed geometry is invalid)")
@@ -143,6 +162,7 @@ def run_electron_parity_gate(
         "min_abs_total_magnetization_uB": min_abs_total_mag,
         "open_shell_tm": tms,
         "valence_used": {s: valence[s] for s in symbol_counts},
+        "metallic_smearing_context": _is_metallic,
     }
     return response_envelope(
         tool="electron_parity_gate",
@@ -207,13 +227,21 @@ def main(argv: list[str] | None = None) -> int:
     src.add_argument("--symbols", nargs="+", help="explicit counts, e.g. --symbols Fe31 S64 H1")
     p.add_argument("--charge", type=float, default=0.0, help="net cell charge in e (positive = electrons removed)")
     p.add_argument("--valence", nargs="+", default=None, help="valence overrides SYM=Z (e.g. --valence Fe=16 S=6)")
+    p.add_argument("--metallic", action="store_true", default=False,
+                   help="flag: system uses metallic smearing (enables collapse-test spec in next_actions)")
+    p.add_argument("--smearing", type=str, default=None,
+                   help="smearing type string (e.g. gaussian, cold, mv); implies --metallic")
     p.add_argument("--json", action="store_true")
     p.add_argument("--output", type=Path, default=None)
     args = p.parse_args(argv)
 
     counts = counts_from_structure(args.structure) if args.structure else counts_from_formula_tokens(args.symbols)
-    env = run_electron_parity_gate(counts, charge=args.charge,
-                                   valence_overrides=parse_valence_overrides(args.valence))
+    env = run_electron_parity_gate(
+        counts, charge=args.charge,
+        valence_overrides=parse_valence_overrides(args.valence),
+        metallic=args.metallic,
+        smearing=args.smearing,
+    )
     if args.output:
         dump_json(env, args.output)
     if args.json:

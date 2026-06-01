@@ -363,31 +363,31 @@ def test_validation_set():
     cases = [
         {
             "mineral": "mack V_Fe (known 43 meV)",
-            "pristine": r"D:\home\ignat\project-third-matter\results\dft_datasets\2026-05-03\mack_vfe_w3_aborted_2026-05-03\neb_canonical_mack_72at_qe_VFe\relaxed_pristine.xyz",
+            "pristine": r"results\dft_datasets\2026-05-03\mack_vfe_w3_aborted_2026-05-03\neb_canonical_mack_72at_qe_VFe\relaxed_pristine.xyz",
             "V_idx": 37,
             "ground_truth": "SYMMETRIC, 43 meV",
         },
         {
             "mineral": "greig V_Fe (known 1861 meV)",
-            "pristine": r"D:\home\ignat\project-third-matter\results\dft_datasets\2026-05-27\w2_greigite_full_neb\greig_neb_full_s150\relaxed_pristine.xyz",
+            "pristine": r"results\dft_datasets\2026-05-27\w2_greigite_full_neb\greig_neb_full_s150\relaxed_pristine.xyz",
             "V_idx": 8,
             "ground_truth": "MARGINAL, 1861 meV",
         },
         {
             "mineral": "pent V_Fe (DEFERRED)",
-            "pristine": r"D:\home\ignat\project-third-matter\results\dft_datasets\2026-05-10\w3_pent_136at_qe_VFe\prod_dir\relaxed_pristine.xyz",
+            "pristine": r"results\dft_datasets\2026-05-10\w3_pent_136at_qe_VFe\prod_dir\relaxed_pristine.xyz",
             "V_idx": 119,
             "ground_truth": "STRONG ASYMMETRY",
         },
         {
             "mineral": "pyr V_Fe (ΔE=0, NEB pending)",
-            "pristine": r"D:\home\ignat\project-third-matter\results\dft_datasets\2026-05-28\pyr_VFe_W2_tier1\neb_canonical_pyr_96at_qe_VFe\relaxed_pristine.xyz",
+            "pristine": r"results\dft_datasets\2026-05-28\pyr_VFe_W2_tier1\neb_canonical_pyr_96at_qe_VFe\relaxed_pristine.xyz",
             "V_idx": 84,
             "ground_truth": "SYMMETRIC OR MARGINAL (predicted)",
         },
         {
             "mineral": "marc V_S smoke (ortho Pnnm)",
-            "pristine": r"D:\home\ignat\project-third-matter\results\dft_datasets\2026-05-18_marcasite_smoke_w1\marc_smoke\relaxed_pristine.xyz",
+            "pristine": r"results\dft_datasets\2026-05-18_marcasite_smoke_w1\marc_smoke\relaxed_pristine.xyz",
             "V_idx": 28,
             "ground_truth": "ASYMMETRY (marc 174 meV ΔE for V_Fe; V_S smoke worked)",
         },
@@ -405,7 +405,7 @@ def test_validation_set():
         results.append({"case": c, "report": pf.report})
 
     # Save aggregate
-    out_path = Path(r"D:\home\ignat\project-third-matter\dft-neb\ph-diagnostic\preflight_validation_results.json")
+    out_path = Path("preflight_validation_results.json")
     with open(out_path, "w") as f:
         json.dump(results, f, indent=2, default=str)
     print(f"\n\nSaved: {out_path}")

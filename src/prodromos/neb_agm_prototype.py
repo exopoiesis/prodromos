@@ -1,10 +1,10 @@
 """
 NEB-AGM prototype — NEB as Adaptive Game with Memory.
 
-Phase 3 of ROADMAP_NEB_GT_THEORY.md (tasks M3.A + M3.C + M3.D + M3.F),
-with the post-s156 corrections:
+Phase 3 of the project roadmap,
+with later corrections:
   * BACKBONE = string method (Vanden-Eijnden 2007), NOT ADMM (retracted via
-    tri-consilium — category error, see admm_neb_results/TRI_CONSILIUM_VERDICT).
+    tri-consilium — category error).
     Inter-image communication = arclength reparametrization (no spring tuning).
   * Per-image MEMORY (M3.A): each image keeps its own curvature estimate from
     successive (x, g_perp) history -> adaptive per-image step size.

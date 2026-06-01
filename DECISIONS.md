@@ -2,7 +2,7 @@
 
 ## D-001 (2026-06-01) — Name: Prodromos
 
-The framework that grew in the Third Matter `dft-neb/` working folder was promoted to a
+The framework that grew in an internal Third Matter working folder was promoted to a
 standalone tool and named **Prodromos** (πρόδρομος, "the one who runs ahead" / forerunner).
 The name captures the function literally: a $0 pre-flight that runs ahead of the expensive
 DFT NEB and reports whether the path is worth taking. Distribution name `tm-prodromos`,
@@ -19,8 +19,8 @@ the proven layout of `arxiv-radar-mcp`: `src/<pkg>/` package, `tests/`, `pyproje
 (hatchling), `.gitignore`, `LICENSE`, console-script entry point. Remote target
 `github.com/exopoiesis/prodromos`.
 
-The previous `ph-diagnostic/` flat-script suite (sibling-import scripts run via
-`python foo.py`) was migrated into a real package: 29 core modules → `src/prodromos/`,
+The previous flat-script suite (sibling-import scripts run via `python foo.py`) was
+migrated into a real package: 29 core modules → `src/prodromos/`,
 26 test files → `tests/`, all intra-suite imports rewritten to absolute `prodromos.*`,
 the `sys.path` hack dropped from `conftest.py`. A thin `__main__.py` dispatches 15
 production subcommands to the per-module argparse via `runpy`. **206 tests pass** in the

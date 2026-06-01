@@ -309,7 +309,7 @@ def run_endpoint_enumeration(
 
 
 def run_historical_examples():
-    base = Path(r"D:\home\ignat\project-third-matter")
+    base = Path(".")
 
     # Pent V_Fe enumeration
     pent_out = base / "experiments" / "2026-05-28_multi_endpoint_v3" / "pent_VFe"
