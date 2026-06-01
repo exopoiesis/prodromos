@@ -19,43 +19,94 @@ class TestEndpointProvenanceGateDFTRelaxed:
     """dft_relaxed -> ENDPOINT_VALID in all cases."""
 
     def test_dft_relaxed_is_endpoint_valid(self):
-        env = run_endpoint_provenance_gate(provenance="dft_relaxed")
+        env = run_endpoint_provenance_gate(geometry_origin="dft_relaxed")
         assert env["verdict"] == "ENDPOINT_VALID"
         assert env["confidence"] == "high"
 
     def test_dft_relaxed_energy_valid_for_ranking(self):
-        env = run_endpoint_provenance_gate(provenance="dft_relaxed", energy_eV=-12345.6)
+        env = run_endpoint_provenance_gate(geometry_origin="dft_relaxed", energy_eV=-12345.6)
         assert env["result"]["energy_valid_for_ranking"] is True
         assert env["result"]["energy_downgraded"] is False
         assert env["result"]["energy_eV"] == pytest.approx(-12345.6)
 
     def test_dft_relaxed_bond_geometry_ok_true(self):
-        env = run_endpoint_provenance_gate(provenance="dft_relaxed", bond_geometry_ok=True)
+        env = run_endpoint_provenance_gate(geometry_origin="dft_relaxed", bond_geometry_ok=True)
         assert env["verdict"] == "ENDPOINT_VALID"
         # bond_geometry_ok=True mentioned in reasons
         assert any("necessary condition" in r.lower() for r in env["reasons"])
 
     def test_dft_relaxed_bond_geometry_ok_false_gives_warning(self):
-        env = run_endpoint_provenance_gate(provenance="dft_relaxed", bond_geometry_ok=False)
+        env = run_endpoint_provenance_gate(geometry_origin="dft_relaxed", bond_geometry_ok=False)
         assert env["verdict"] == "ENDPOINT_VALID"
         # there should be a warning about unusual geometry
         assert any("unusual" in w.lower() or "bond" in w.lower() for w in env["warnings"])
 
     def test_dft_relaxed_label_echoed(self):
-        env = run_endpoint_provenance_gate(provenance="dft_relaxed", label="endA")
+        env = run_endpoint_provenance_gate(geometry_origin="dft_relaxed", label="endA")
         assert env["result"]["label"] == "endA"
+
+
+class TestEndpointProvenanceGateGeometryOriginAlias:
+    """The renamed `geometry_origin` param and the deprecated `provenance` alias."""
+
+    def test_geometry_origin_in_result(self):
+        env = run_endpoint_provenance_gate(geometry_origin="dft_relaxed")
+        assert env["result"]["geometry_origin"] == "dft_relaxed"
+        # deprecated alias key still mirrors it
+        assert env["result"]["provenance"] == "dft_relaxed"
+
+    def test_deprecated_provenance_kwarg_still_works(self):
+        env = run_endpoint_provenance_gate(provenance="dft_relaxed")
+        assert env["verdict"] == "ENDPOINT_VALID"
+        assert env["result"]["geometry_origin"] == "dft_relaxed"
+
+    def test_deprecated_provenance_kwarg_mlip(self):
+        env = run_endpoint_provenance_gate(provenance="mlip_relaxed")
+        assert env["verdict"] == "NOT_AN_ENDPOINT_MLIP_GEOMETRY"
+
+    def test_deprecated_provenance_emits_deprecation_note(self):
+        env = run_endpoint_provenance_gate(provenance="dft_relaxed")
+        assert any("deprecat" in r.lower() for r in env["reasons"])
+
+    def test_geometry_origin_no_deprecation_note(self):
+        env = run_endpoint_provenance_gate(geometry_origin="dft_relaxed")
+        assert not any("deprecat" in r.lower() for r in env["reasons"])
+
+    def test_geometry_origin_wins_over_provenance(self):
+        env = run_endpoint_provenance_gate(
+            geometry_origin="dft_relaxed", provenance="mlip_relaxed"
+        )
+        assert env["verdict"] == "ENDPOINT_VALID"
+        assert env["result"]["geometry_origin"] == "dft_relaxed"
+
+    def test_missing_both_raises(self):
+        with pytest.raises(ValueError):
+            run_endpoint_provenance_gate()
+
+    def test_cli_geometry_origin_flag(self):
+        from prodromos.endpoint_provenance_gate import main
+        rc = main(["--geometry-origin", "dft_relaxed", "--json"])
+        assert rc == 0
+
+    def test_cli_deprecated_provenance_flag_still_works(self, capsys):
+        from prodromos.endpoint_provenance_gate import main
+        rc = main(["--provenance", "dft_relaxed", "--json"])
+        assert rc == 0
+        captured = capsys.readouterr()
+        # deprecation goes to stderr
+        assert "deprecated" in captured.err.lower()
 
 
 class TestEndpointProvenanceGateMLIPRelaxed:
     """mlip_relaxed -> NOT_AN_ENDPOINT_MLIP_GEOMETRY, energy downgraded."""
 
     def test_mlip_relaxed_is_not_an_endpoint(self):
-        env = run_endpoint_provenance_gate(provenance="mlip_relaxed")
+        env = run_endpoint_provenance_gate(geometry_origin="mlip_relaxed")
         assert env["verdict"] == "NOT_AN_ENDPOINT_MLIP_GEOMETRY"
         assert env["confidence"] == "high"
 
     def test_mlip_relaxed_energy_not_valid(self):
-        env = run_endpoint_provenance_gate(provenance="mlip_relaxed", energy_eV=-12000.0)
+        env = run_endpoint_provenance_gate(geometry_origin="mlip_relaxed", energy_eV=-12000.0)
         assert env["result"]["energy_valid_for_ranking"] is False
         assert env["result"]["energy_downgraded"] is True
 
@@ -71,11 +122,11 @@ class TestEndpointProvenanceGateMLIPRelaxed:
         assert "not sufficient" in combined or "necessary" in combined
 
     def test_mlip_relaxed_downgrade_warning_present(self):
-        env = run_endpoint_provenance_gate(provenance="mlip_relaxed")
+        env = run_endpoint_provenance_gate(geometry_origin="mlip_relaxed")
         assert any("downgrad" in w.lower() or "~20 ev" in w.lower() for w in env["warnings"])
 
     def test_mlip_relaxed_next_actions_require_dft_relaxation(self):
-        env = run_endpoint_provenance_gate(provenance="mlip_relaxed")
+        env = run_endpoint_provenance_gate(geometry_origin="mlip_relaxed")
         combined = " ".join(env["next_actions"]).lower()
         assert "dft ionic relaxation" in combined or "dft relaxation" in combined
 
@@ -91,17 +142,17 @@ class TestEndpointProvenanceGateUnknownProvenance:
     """Any non-dft_relaxed provenance -> NOT_AN_ENDPOINT_MLIP_GEOMETRY."""
 
     def test_unknown_provenance_is_not_valid(self):
-        env = run_endpoint_provenance_gate(provenance="unknown")
+        env = run_endpoint_provenance_gate(geometry_origin="unknown")
         assert env["verdict"] == "NOT_AN_ENDPOINT_MLIP_GEOMETRY"
         assert env["result"]["energy_valid_for_ranking"] is False
 
     def test_empty_string_provenance_is_not_valid(self):
-        env = run_endpoint_provenance_gate(provenance="")
+        env = run_endpoint_provenance_gate(geometry_origin="")
         assert env["verdict"] == "NOT_AN_ENDPOINT_MLIP_GEOMETRY"
 
     def test_ase_relaxed_provenance_is_not_valid(self):
         # ASE/LAMMPS relaxation without DFT forces also not valid
-        env = run_endpoint_provenance_gate(provenance="ase_bfgs_mlip")
+        env = run_endpoint_provenance_gate(geometry_origin="ase_bfgs_mlip")
         assert env["verdict"] == "NOT_AN_ENDPOINT_MLIP_GEOMETRY"
 
 
@@ -109,7 +160,7 @@ class TestEndpointProvenanceGateEnvelope:
     """Stable response_envelope contract."""
 
     def test_envelope_has_stable_keys(self):
-        env = run_endpoint_provenance_gate(provenance="dft_relaxed")
+        env = run_endpoint_provenance_gate(geometry_origin="dft_relaxed")
         assert set(env) == {
             "tool", "version", "status", "verdict", "confidence",
             "reasons", "next_actions", "artifacts", "warnings", "result",
@@ -117,18 +168,18 @@ class TestEndpointProvenanceGateEnvelope:
         assert env["tool"] == "endpoint_provenance_gate"
 
     def test_result_has_required_fields(self):
-        env = run_endpoint_provenance_gate(provenance="mlip_relaxed")
+        env = run_endpoint_provenance_gate(geometry_origin="mlip_relaxed")
         r = env["result"]
         for key in (
-            "label", "provenance", "provenance_normalised",
+            "label", "geometry_origin", "provenance", "provenance_normalised",
             "is_dft_relaxed", "energy_eV", "energy_valid_for_ranking",
             "bond_geometry_ok", "energy_downgraded",
         ):
             assert key in r, f"missing result key: {key}"
 
     def test_is_dft_relaxed_flag(self):
-        assert run_endpoint_provenance_gate(provenance="dft_relaxed")["result"]["is_dft_relaxed"] is True
-        assert run_endpoint_provenance_gate(provenance="mlip_relaxed")["result"]["is_dft_relaxed"] is False
+        assert run_endpoint_provenance_gate(geometry_origin="dft_relaxed")["result"]["is_dft_relaxed"] is True
+        assert run_endpoint_provenance_gate(geometry_origin="mlip_relaxed")["result"]["is_dft_relaxed"] is False
 
 
 # ===========================================================================

@@ -33,6 +33,14 @@ GATE_VERDICT_PRIORS: dict[str, dict[str, float]] = {
         "NSPIN2_RECOMMENDED": 0.15,
         "REVIEW": 0.05,
     },
+    # spin-collapse is wired as an honest chance-node AFTER a NSPIN2_* parity
+    # verdict (policy.py G02). Its verdict prior is the SPIN_COLLAPSE_PRIOR below,
+    # expressed in the spin_collapse_verdict gate's verdict vocabulary so the tree
+    # builder can branch on it directly.
+    "spin-collapse": {
+        "NSPIN1_OK": 0.5,         # the seeded local moment collapses (nspin=1 ok)
+        "NSPIN2_REQUIRED": 0.5,   # a localized moment persists (nspin=2 required)
+    },
 }
 
 # Choice-node options that are TRUE chance forks vs deterministic decisions.
@@ -40,7 +48,9 @@ GATE_VERDICT_PRIORS: dict[str, dict[str, float]] = {
 # spin still carries a moment-collapse chance the design flags as a real
 # chance-node (some systems collapse to nspin=1, others stay ferrimagnetic).
 # Represented as a prior on whether the nspin=1 shortcut is admissible after a
-# spin-polarised verdict.
+# spin-polarised verdict. The GATE_VERDICT_PRIORS["spin-collapse"] entry above is
+# this same prior re-expressed in the gate's verdict vocabulary (NSPIN1_OK /
+# NSPIN2_REQUIRED) for the tree builder.
 SPIN_COLLAPSE_PRIOR = {"collapses_nspin1_ok": 0.5, "persists_nspin2": 0.5}
 
 

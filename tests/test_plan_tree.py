@@ -115,6 +115,30 @@ def test_calibration_outcomes_shift_tree_verdict():
     assert tuned_p > base_p
 
 
+def test_tree_branches_both_nspin_after_spin_collapse():
+    """The spin-collapse chance-node must surface BOTH nspin branches.
+
+    After a NSPIN2_* parity verdict the graph routes through the spin_collapse
+    gate (G02), which branches over SPIN_COLLAPSE_PRIOR into NSPIN1_OK (collapsed)
+    and NSPIN2_REQUIRED (persists). Both nspin production strategies must appear.
+    """
+    result = walk(POLICY_GRAPH, _load_example(), mode="tree")
+    labels = " ".join(s.label for s in result.strategies if not s.is_stop)
+    methods = " ".join(s.method for s in result.strategies if not s.is_stop)
+    blob = labels + " " + methods
+    assert "nspin1" in blob, "nspin=1 (collapsed) branch missing"
+    assert "nspin2" in blob, "nspin=2 (persists) branch missing"
+
+
+def test_spin_collapse_prior_matches_gate_verdicts():
+    """The tree-mode prior for spin-collapse uses the gate's verdict vocabulary."""
+    from prodromos.plan.priors import GATE_VERDICT_PRIORS
+
+    dist = GATE_VERDICT_PRIORS["spin-collapse"]
+    assert set(dist) == {"NSPIN1_OK", "NSPIN2_REQUIRED"}
+    assert abs(sum(dist.values()) - 1.0) < 1e-9
+
+
 def test_stop_present_as_reference():
     doc = _load_example()
     result = walk(POLICY_GRAPH, doc, mode="tree")

@@ -96,15 +96,17 @@ def test_endpoint_provenance_mlip_geometry():
     not _PREFLIGHT_CASE.exists(),
     reason="tm-spec examples not available beside the prodromos checkout",
 )
-def test_plan_on_preflight_example_go():
-    """The bundled preflight example case routes to GO."""
+def test_plan_on_preflight_example_routes_to_spin_collapse_needs_data():
+    """The bundled preflight example is odd-electron -> NSPIN2_MANDATORY -> the
+    spin-collapse gate (G02), which a bare pre-flight case cannot feed (no nspin=2
+    single-point), so route honestly stops at NEEDS_DATA."""
     pytest.importorskip(
         "tm_spec",
         reason="plan requires tm-spec (pip install -e ../tm-spec / .[plan])",
     )
     env = mcp_server.tool_plan(str(_PREFLIGHT_CASE))
     assert env["tool"] == "plan"
-    assert env["verdict"] == "GO"
+    assert env["verdict"] == "NEEDS_DATA"
 
 
 def test_electron_parity_odd_count_envelope():

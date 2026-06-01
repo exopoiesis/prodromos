@@ -146,7 +146,7 @@ def to_endpoint_provenance_inputs(doc: dict) -> dict | NeedsData:
     )
     energy = (eps.get(worst_name) or {}).get("E_eV")
     return {
-        "provenance": worst_prov,
+        "geometry_origin": worst_prov,
         "energy_eV": energy,
         "label": worst_name,
     }

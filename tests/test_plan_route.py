@@ -35,19 +35,44 @@ def _full_case() -> dict:
     }
 
 
-def test_route_over_example_reaches_go():
+def _closedshell_go_case() -> dict:
+    """Even-electron, TM-free, both endpoints DFT-relaxed -> route reaches GO."""
+    return {
+        "structure": {"formula": "H2O", "space_group": {"symbol": "P1"}},
+        "calculation": {"level": {"spin": "none"}},
+        "workflow": {"endpoints": {
+            "A": {"geometry_origin": "dft_relaxed", "E_eV": -1.0},
+            "B": {"geometry_origin": "dft_relaxed", "E_eV": -1.0},
+        }},
+    }
+
+
+def test_route_over_example_reaches_spin_collapse_needs_data():
+    # The example is odd-electron (Fe32S63H1) -> NSPIN2_MANDATORY -> spin-collapse
+    # gate. A bare pre-flight case has no nspin=2 single-point, so the spin-collapse
+    # adapter returns NeedsData and route honestly stops at NEEDS_DATA (G02).
     result = walk(POLICY_GRAPH, _load_example(), mode="route")
+    assert result.mode == "route"
+    assert result.verdict == "NEEDS_DATA"
+    assert result.terminal_node == "spin_collapse"
+    gate_ids = [s.sanity_id for s in result.steps]
+    assert "G09_geometry_origin" in gate_ids
+    assert "G11_electron_parity" in gate_ids
+    assert "G02_moment_not_collapsed" in gate_ids
+
+
+def test_route_closed_shell_reaches_go():
+    result = walk(POLICY_GRAPH, _closedshell_go_case(), mode="route")
     assert result.mode == "route"
     assert result.verdict == "GO"
     assert result.terminal_node == "go_launch_neb"
-    # endpoint-provenance + electron-parity actually executed
     gate_ids = [s.sanity_id for s in result.steps]
     assert "G09_geometry_origin" in gate_ids
     assert "G11_electron_parity" in gate_ids
 
 
 def test_route_envelope_shape():
-    result = walk(POLICY_GRAPH, _load_example(), mode="route")
+    result = walk(POLICY_GRAPH, _closedshell_go_case(), mode="route")
     env = to_envelope(result)
     assert env["tool"] == "plan"
     assert env["verdict"] == "GO"

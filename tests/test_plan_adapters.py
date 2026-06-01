@@ -55,7 +55,7 @@ def test_electron_parity_needs_data_when_no_formula():
 def test_endpoint_provenance_extraction_all_dft():
     out = to_endpoint_provenance_inputs(_example_doc())
     assert isinstance(out, dict)
-    assert out["provenance"] == "dft_relaxed"
+    assert out["geometry_origin"] == "dft_relaxed"
 
 
 def test_endpoint_provenance_picks_worst_endpoint():
@@ -63,7 +63,7 @@ def test_endpoint_provenance_picks_worst_endpoint():
     doc["workflow"]["endpoints"]["B"]["geometry_origin"] = "mlip_relaxed"
     out = to_endpoint_provenance_inputs(doc)
     assert isinstance(out, dict)
-    assert out["provenance"] == "mlip_relaxed"
+    assert out["geometry_origin"] == "mlip_relaxed"
     assert out["label"] == "B"
 
 

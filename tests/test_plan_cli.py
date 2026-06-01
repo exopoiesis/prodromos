@@ -20,7 +20,9 @@ def test_cli_route_envelope_exit0(capsys):
     assert rc == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["tool"] == "plan"
-    assert payload["verdict"] == "GO"
+    # The example is odd-electron -> NSPIN2_MANDATORY -> spin-collapse gate; a bare
+    # pre-flight case has no nspin=2 single-point, so route stops at NEEDS_DATA (G02).
+    assert payload["verdict"] == "NEEDS_DATA"
 
 
 def test_cli_emit_preflight(capsys):
