@@ -30,6 +30,28 @@ def test_cli_emit_preflight(capsys):
     assert payload["engine"]["name"] == "prodromos"
 
 
+def test_cli_tree_mode_strategies(capsys):
+    rc = plan_cli.main([str(_EXAMPLE), "--mode", "tree", "--json"])
+    assert rc == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["result"]["mode"] == "tree"
+    assert payload["result"]["strategies"]
+
+
+def test_cli_tree_budget_and_topk(capsys):
+    rc = plan_cli.main([
+        str(_EXAMPLE), "--mode", "tree", "--emit", "preflight",
+        "--budget-usd", "392", "--top-k", "3", "--json",
+    ])
+    assert rc == 0
+    payload = json.loads(capsys.readouterr().out)
+    strategies = payload["plan"]["strategies"]
+    assert strategies
+    assert len(strategies) <= 3
+    for s in strategies:
+        assert "p_success" in s and "cvar_usd" in s and "utility" in s
+
+
 def test_cli_invalid_case(tmp_path, capsys):
     bad = tmp_path / "bad.tm.yaml"
     bad.write_text("spec: tm-spec/0.3\nkind: NEBCalculation\n", encoding="utf-8")

@@ -123,7 +123,12 @@ def test_preflight_block_has_required_fields():
     assert "next_action" in block["plan"]
 
 
-def test_tree_mode_is_stub():
+def test_tree_mode_now_scores_strategies():
+    # tree mode is no longer a stub: it returns ranked, scored strategies.
     result = walk(POLICY_GRAPH, _load_example(), mode="tree")
     assert result.mode == "tree"
-    assert any("STUB" in w for w in result.warnings)
+    assert result.strategies, "tree mode must return scored strategies"
+    assert not any("STUB" in w for w in result.warnings)
+    # sorted by utility, descending
+    utils = [s.utility for s in result.strategies]
+    assert utils == sorted(utils, reverse=True)

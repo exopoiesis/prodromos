@@ -71,13 +71,26 @@ def main(argv: list[str] | None = None) -> int:
         choices=["route", "tree"],
         default="route",
         help="route = execute gates and recommend one next step (default); "
-        "tree = scored strategy tree (STUB, next increment)",
+        "tree = scored strategy tree (Bellman expectimax + CVaR)",
     )
     parser.add_argument(
         "--emit",
         choices=["envelope", "preflight"],
         default="envelope",
         help="envelope = response_envelope (default); preflight = tm-spec 0.3 preflight block",
+    )
+    parser.add_argument(
+        "--budget-usd",
+        type=float,
+        default=None,
+        help="remaining budget (USD); tree mode uses beta=cost_run/budget for CVaR "
+        "tail control. Omit for pure expected-value scoring.",
+    )
+    parser.add_argument(
+        "--top-k",
+        type=int,
+        default=None,
+        help="tree mode: keep only the top-K ranked strategies",
     )
     parser.add_argument("--json", action="store_true", help="print JSON")
     parser.add_argument("--output", help="optional output path (JSON)")
@@ -90,7 +103,13 @@ def main(argv: list[str] | None = None) -> int:
         dump_json(err)
         return 1
 
-    result = walk(POLICY_GRAPH, doc, mode=args.mode)
+    result = walk(
+        POLICY_GRAPH,
+        doc,
+        mode=args.mode,
+        budget_usd=args.budget_usd,
+        top_k=args.top_k,
+    )
     payload = to_envelope(result) if args.emit == "envelope" else to_preflight_block(result)
 
     if args.output:

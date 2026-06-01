@@ -12,9 +12,15 @@ import json
 from dataclasses import dataclass, field
 
 from prodromos.plan import PLAN_GRAPH_VERSION
-from prodromos.plan.adapters import NeedsData, tm_doc_to_gate_inputs
+from prodromos.plan.adapters import NeedsData, parse_formula, tm_doc_to_gate_inputs
+from prodromos.plan.calibrate import Calibrator, default_calibrator, make_key
 from prodromos.plan.graph import Node, PolicyGraph
+from prodromos.plan.priors import (
+    GATE_VERDICT_PRIORS,
+    economics_for,
+)
 from prodromos.plan.registry import GATE_REGISTRY
+from prodromos.plan.score import PlanNode, rank_strategies
 
 MAX_STEPS = 64  # hard cap; the graph is a DAG so this is a belt-and-braces guard.
 
@@ -49,6 +55,8 @@ class WalkResult:
     reasons: list[str] = field(default_factory=list)
     next_actions: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    # tree (SIMULATE) mode only: ranked leaf strategies (see score.ScoredStrategy).
+    strategies: list = field(default_factory=list)
 
 
 # --------------------------------------------------------------------------
@@ -235,41 +243,247 @@ def _select_edge(node: Node, ctx: dict):
 
 
 # --------------------------------------------------------------------------
-# tree simulator (STUB -- next increment)
+# tree simulator (SIMULATE -- branch over priors, score by backward induction)
 # --------------------------------------------------------------------------
-def _tree(graph: PolicyGraph, doc: dict) -> WalkResult:
-    """SIMULATE mode -- scored strategy tree.
+DEPTH_CAP = 6  # consilium CS S2: depth 4-6, hard cap as belt-and-braces
 
-    NOT IMPLEMENTED in this increment. The scoring layer is intentionally
-    deferred; a minimal skeleton is returned so the CLI/contract surface exists.
 
-    # TODO: Bellman expectimax (max @ decision nodes, E @ chance/gate nodes),
-    #       STOP = max(0, E[NPV of best run]), CVaR_alpha tail control,
-    #       Beta-Binomial calibration with hierarchical backoff by chemistry
-    #       signature, scored on the LOWER credible bound. See design doc
-    #       PRODROMOS_PLAN_ENGINE_DESIGN.md S2 corrections C1-C5.
+def _chemistry_signature(doc: dict) -> str:
+    """Coarse chemistry signature for calibration backoff (NOT a mineral name).
+
+    Built from the element set + space-group symbol, so it pools by chemistry
+    family ("V_Fe chemistry universal") rather than by mineral identity. Returns
+    ``"*"`` (the global cell) when nothing usable is present.
+    """
+    structure = doc.get("structure") or {}
+    formula = structure.get("formula")
+    counts = parse_formula(formula) if isinstance(formula, str) else {}
+    elems = "-".join(sorted(counts)) if counts else "*"
+    sg = structure.get("space_group") or {}
+    sg_sym = sg.get("symbol") if isinstance(sg, dict) else None
+    return f"{elems}|{sg_sym or '*'}"
+
+
+def _verdict_dist(node: Node) -> dict[str, float]:
+    """Prior distribution over a gate node's verdicts (tree mode).
+
+    Falls back to a single deterministic branch per declared edge when no prior
+    is registered for the gate (we do NOT execute the gate in tree mode).
+    """
+    if node.gate in GATE_VERDICT_PRIORS:
+        return GATE_VERDICT_PRIORS[node.gate]
+    # No registered prior: assume each declared edge's first verdict is equally
+    # likely. We can only see verdicts the edges route on, so approximate by
+    # spreading mass uniformly across edges (each carries one routing verdict).
+    n = max(1, len(node.edges))
+    return {f"_edge{i}": 1.0 / n for i in range(n)}
+
+
+@dataclass
+class _TreeCtx:
+    """Path-accumulated context for leaf economics + calibration key."""
+
+    method: str | None = None
+    nspin: int | None = None
+    verdicts: tuple[str, ...] = ()
+
+
+def _build_tree(
+    graph: PolicyGraph,
+    node: Node,
+    ctx: _TreeCtx,
+    calib: Calibrator,
+    chem_sig: str,
+    depth: int,
+) -> PlanNode:
+    """Recursively build the scored PlanNode tree from the policy graph.
+
+    gate node  -> CHANCE node branching over the verdict prior;
+    choice node-> DECISION node branching over all options;
+    terminal   -> leaf (GO = run leaf with calibrated p_success + economics;
+                  others = STOP leaf, reference U = 0).
+    """
+    if depth > DEPTH_CAP:
+        # safety: treat as STOP rather than recurse unbounded (DAG => unreachable
+        # in practice, this is belt-and-braces).
+        return PlanNode(kind="TERMINAL", label=node.id, is_stop=True, path=ctx.verdicts)
+
+    if node.kind == "terminal":
+        if node.terminal == "GO":
+            econ = economics_for(ctx.method)
+            key = make_key(chem_sig, ctx.method, ctx.nspin, ctx.verdicts)
+            p = calib.p_success_lower(key)
+            return PlanNode(
+                kind="TERMINAL",
+                label=_leaf_label(ctx),
+                is_stop=False,
+                p_success=p,
+                v_paper=econ.v_paper,
+                v_fail=econ.v_fail,
+                cost_run=econ.cost_run,
+                cost_redo=econ.cost_redo,
+                paper_grade_reachable=True,
+                method=_method_label(ctx),
+                path=ctx.verdicts,
+            )
+        # NO-GO / NEEDS_DATA / INVESTIGATE -> STOP reference leaf
+        return PlanNode(
+            kind="TERMINAL",
+            label=f"STOP:{node.terminal}",
+            is_stop=True,
+            method=node.what or node.terminal or "",
+            path=ctx.verdicts,
+        )
+
+    if node.kind == "gate":
+        children: list[tuple[float, PlanNode]] = []
+        dist = _verdict_dist(node)
+        for verdict, prob in dist.items():
+            edge = _select_edge(node, {"verdict": verdict})
+            if edge is None:
+                # verdict with no routing edge -> dead-end STOP, keep mass honest
+                children.append((prob, PlanNode(
+                    kind="TERMINAL", label=f"STOP:{node.id}:{verdict}",
+                    is_stop=True, path=ctx.verdicts,
+                )))
+                continue
+            child_ctx = _TreeCtx(
+                method=ctx.method,
+                nspin=ctx.nspin,
+                verdicts=(*ctx.verdicts, verdict) if not verdict.startswith("_edge") else ctx.verdicts,
+            )
+            child = _build_tree(graph, graph.node(edge.dst), child_ctx, calib, chem_sig, depth + 1)
+            children.append((prob, child))
+        return PlanNode(kind="CHANCE", label=node.id, children=children)
+
+    if node.kind == "choice":
+        children = []
+        for option in (node.options or []):
+            edge = _select_edge(node, {"option": option})
+            if edge is None:
+                continue
+            child_ctx = _TreeCtx(
+                method=_apply_option_method(ctx.method, option),
+                nspin=_apply_option_nspin(ctx.nspin, option),
+                verdicts=ctx.verdicts,
+            )
+            child = _build_tree(graph, graph.node(edge.dst), child_ctx, calib, chem_sig, depth + 1)
+            children.append((1.0, child))  # prob ignored for DECISION nodes
+        return PlanNode(kind="DECISION", label=node.id, children=children)
+
+    raise ValueError(f"unknown node kind {node.kind!r} at {node.id!r}")
+
+
+def _apply_option_method(current: str | None, option: str) -> str | None:
+    if option in ("band", "dimer", "string"):
+        return option
+    return current
+
+
+def _apply_option_nspin(current: int | None, option: str) -> int | None:
+    if option == "nspin1":
+        return 1
+    if option == "nspin2":
+        return 2
+    return current
+
+
+def _method_label(ctx: _TreeCtx) -> str:
+    method = ctx.method or "band"
+    spin = f"nspin={ctx.nspin}" if ctx.nspin else "nspin=auto"
+    return f"{method}-NEB, {spin}"
+
+
+def _leaf_label(ctx: _TreeCtx) -> str:
+    method = ctx.method or "band"
+    spin = f"_nspin{ctx.nspin}" if ctx.nspin else ""
+    return f"{method}_neb{spin}"
+
+
+def _tree(
+    graph: PolicyGraph,
+    doc: dict,
+    *,
+    budget_usd: float | None = None,
+    top_k: int | None = None,
+    beam: int = 8,
+    alpha: float = 0.2,
+    calib: Calibrator | None = None,
+) -> WalkResult:
+    """SIMULATE mode -- scored strategy tree (Bellman expectimax + CVaR).
+
+    Branches gate nodes over prior verdict distributions and choice nodes over
+    all options, scores leaves by calibrated p_success (lower bound) and CVaR
+    tail control, prunes by strict stochastic dominance, and returns the ranked
+    strategies (consilium C1-C5).
     """
     res = WalkResult(
         mode="tree",
         verdict="INVESTIGATE",
-        confidence="low",
+        confidence="medium",
         plan_graph_version=PLAN_GRAPH_VERSION,
     )
-    res.warnings.append(
-        "tree mode is a STUB (first increment): scoring / Bellman-expectimax / "
-        "CVaR / Beta-Binomial calibration are the next increment. Use --mode route."
+    calibrator = calib or default_calibrator()
+    chem_sig = _chemistry_signature(doc)
+    root = _build_tree(
+        graph, graph.node(graph.root), _TreeCtx(), calibrator, chem_sig, depth=0
     )
-    res.next_action = "run --mode route for an executable next-step recommendation"
+    strategies = rank_strategies(
+        root,
+        budget_remaining=budget_usd,
+        alpha=alpha,
+        beam=beam,
+        top_k=top_k,
+    )
+    res.strategies = strategies
+
+    # overall verdict: best non-STOP strategy beats STOP (U>0) -> GO; else NO-GO.
+    best = strategies[0] if strategies else None
+    if best is None:
+        res.verdict = "INVESTIGATE"
+        res.next_action = "no strategies enumerated; check the policy graph"
+        return res
+    if best.is_stop or best.utility <= 0.0:
+        res.verdict = "NO-GO"
+        res.confidence = "high" if best.is_stop else "medium"
+        res.next_action = (
+            "do not commit the expensive run: every enumerated strategy has "
+            "non-positive expected utility (STOP is the optimal action)"
+        )
+        res.reasons.append(
+            "max(0, .) backward induction: best run utility <= 0 (real-option STOP)"
+        )
+    else:
+        res.verdict = "GO"
+        res.confidence = "high" if best.p_success >= 0.7 else "medium"
+        res.next_action = (
+            f"launch strategy {best.label!r} ({best.method}); "
+            f"E[cost]=${best.expected_cost_usd}, U={best.utility}"
+        )
+        res.next_action_cost_usd = best.expected_cost_usd
+        res.reasons.append(
+            f"top strategy by robust utility (beta from budget, CVaR_{alpha} tail): "
+            f"{best.label}"
+        )
+    res.next_actions = [s.label for s in strategies]
     return res
 
 
 # --------------------------------------------------------------------------
 # public entry
 # --------------------------------------------------------------------------
-def walk(graph: PolicyGraph, doc: dict, mode: str = "route") -> WalkResult:
+def walk(
+    graph: PolicyGraph,
+    doc: dict,
+    mode: str = "route",
+    *,
+    budget_usd: float | None = None,
+    top_k: int | None = None,
+    calib: Calibrator | None = None,
+) -> WalkResult:
     """Walk ``graph`` over the tm-spec ``doc`` in route (EXECUTE) or tree (SIMULATE)."""
     if mode == "route":
         return _route(graph, doc)
     if mode == "tree":
-        return _tree(graph, doc)
+        return _tree(graph, doc, budget_usd=budget_usd, top_k=top_k, calib=calib)
     raise ValueError(f"unknown mode {mode!r} (expected 'route' or 'tree')")

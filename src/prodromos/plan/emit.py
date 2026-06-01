@@ -40,6 +40,21 @@ def to_envelope(walk_result: WalkResult) -> dict:
         "next_action": wr.next_action,
         "next_action_cost_usd": wr.next_action_cost_usd,
     }
+    if wr.strategies:
+        result["strategies"] = [
+            {
+                "label": s.label,
+                "method": s.method,
+                "expected_cost_usd": float(s.expected_cost_usd),
+                "p_success": float(s.p_success),
+                "cvar_usd": float(s.cvar_usd),
+                "utility": float(s.utility),
+                "paper_grade_reachable": bool(s.paper_grade_reachable),
+                "proposed_workflow_ref": s.proposed_workflow_ref,
+                "is_stop": bool(s.is_stop),
+            }
+            for s in wr.strategies
+        ]
     next_actions = list(wr.next_actions)
     if wr.next_action and wr.next_action not in next_actions:
         next_actions.insert(0, wr.next_action)
@@ -76,15 +91,35 @@ def to_preflight_block(walk_result: WalkResult) -> dict:
             gate_entry["next_actions"] = step.next_actions
         gates.append(gate_entry)
 
+    plan_block: dict = {
+        "next_action": wr.next_action or "",
+        "next_action_cost_usd": float(wr.next_action_cost_usd),
+    }
+
+    # tree (SIMULATE) mode: fill plan.strategies[] from the ranked leaves.
+    if wr.strategies:
+        strategies = []
+        for s in wr.strategies:
+            entry: dict = {
+                "label": s.label,
+                "method": s.method,
+                "expected_cost_usd": float(s.expected_cost_usd),
+                "p_success": float(s.p_success),
+                "cvar_usd": float(s.cvar_usd),
+                "utility": float(s.utility),
+                "paper_grade_reachable": bool(s.paper_grade_reachable),
+            }
+            if s.proposed_workflow_ref:
+                entry["proposed_workflow_ref"] = s.proposed_workflow_ref
+            strategies.append(entry)
+        plan_block["strategies"] = strategies
+
     block: dict = {
         "engine": {"name": ENGINE_NAME, "version": ENGINE_VERSION},
         "verdict": wr.verdict,
         "confidence": wr.confidence,
         "plan_graph_version": wr.plan_graph_version,
         "gates": gates,
-        "plan": {
-            "next_action": wr.next_action or "",
-            "next_action_cost_usd": float(wr.next_action_cost_usd),
-        },
+        "plan": plan_block,
     }
     return block
