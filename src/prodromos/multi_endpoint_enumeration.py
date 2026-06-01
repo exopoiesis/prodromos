@@ -1,6 +1,6 @@
 """
 Multi-Endpoint v3 site enumeration — generate 14-17 H candidate positions
-для V_Fe pocket of any Fe-S mineral.
+for the V_Fe pocket of any Fe-S mineral.
 
 Site classes (chemist taxonomy):
 1. **S-H monodentate** (6 sites): H at 1.35 Å along V_Fe → S_j for each S neighbor
@@ -9,7 +9,7 @@ Site classes (chemist taxonomy):
 4. **μ-Fe-H-Fe bridging** (2-3 sites): H at midpoint of close Fe-Fe pairs (cubane edges)
 5. **Interstitial trigonal S₃ window** (1-2 sites): H at center of S₃ face
 
-Output: xyz files ready для MACE relax + DFT singlepoint screen.
+Output: xyz files ready for MACE relax + DFT singlepoint screen.
 """
 from __future__ import annotations
 import argparse
@@ -321,7 +321,7 @@ def run_historical_examples():
         out_dir=pent_out,
     )
 
-    # Mack V_Fe enumeration (validation case — should give 1-2 distinct sites только)
+    # Mack V_Fe enumeration (validation case — should give only 1-2 distinct sites)
     mack_out = base / "experiments" / "2026-05-28_multi_endpoint_v3" / "mack_VFe"
     enumerate_sites(
         pristine_path=str(base / "results" / "dft_datasets" / "2026-05-03" /

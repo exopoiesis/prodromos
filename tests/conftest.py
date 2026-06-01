@@ -26,7 +26,7 @@ def double_well_grid():
 
 @pytest.fixture
 def random_cloud_2d():
-    """Random Gaussian cloud в 2D с known V values."""
+    """Random Gaussian cloud in 2D with known V values."""
     rng = np.random.default_rng(42)
     n = 100
     points = rng.normal(0, 1, (n, 2))
@@ -48,7 +48,7 @@ def symmetric_barrier_matrix():
 
 @pytest.fixture
 def asymmetric_barrier_matrix():
-    """Asymmetric 2-state с ΔE > 0."""
+    """Asymmetric 2-state with ΔE > 0."""
     E_a = np.full((2, 2), np.inf)
     E_a[0, 1] = 0.250
     E_a[1, 0] = 0.076  # rev = forward - ΔE = 250 - 174 = 76 meV

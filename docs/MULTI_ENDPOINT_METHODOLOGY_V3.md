@@ -37,7 +37,7 @@ Place H trial positions at 4 chemistry classes:
 
 **Total trial positions: 12-16 per mineral.**
 
-**Chemistry justification (Tard-Pickett 2009, Beinert-Holm-Münck 1997):** In synthetic [Fe₄S₄] cubanes, terminal Fe-H bonds 1.54-1.58 Å observed (X-ray + ²H NMR) under reduction. Pent с mixed-valence Fe²⁺/Fe³⁺ near V_Fe likely has Fe-hydride sink. Cannot exclude this site class a priori.
+**Chemistry justification (Tard-Pickett 2009, Beinert-Holm-Münck 1997):** In synthetic [Fe₄S₄] cubanes, terminal Fe-H bonds 1.54-1.58 Å observed (X-ray + ²H NMR) under reduction. Pent with mixed-valence Fe²⁺/Fe³⁺ near V_Fe likely has Fe-hydride sink. Cannot exclude this site class a priori.
 
 ### Step 2: DFT singlepoint screening (NOT MLIP-only)
 
@@ -71,13 +71,13 @@ Place H trial positions at 4 chemistry classes:
 - Pairwise SOAP distance d_SOAP(i,j)
 - Hierarchical clustering, threshold d_SOAP < 0.5 → same basin
 
-**Expected outcome:** 4-6 truly distinct sites из 7 relaxed.
+**Expected outcome:** 4-6 truly distinct sites from 7 relaxed.
 
 ### Step 5: Magnetic state validation (per-pair)
 
 **Per relevant pair (i, j):**
 - Verify same magnetic state on both endpoints
-- If ⟨S²⟩_i ≠ ⟨S²⟩_j → flag for MECP routing (Harvey 2007), не standard NEB
+- If ⟨S²⟩_i ≠ ⟨S²⟩_j → flag for MECP routing (Harvey 2007), not standard NEB
 - If Δ⟨S²⟩ < 0.1 → Markov OK, proceed standard
 - If 0.1 < Δ⟨S²⟩ < 0.5 → use constrained NEB (fixed magmom)
 - If Δ⟨S²⟩ > 0.5 → switch to surface-hopping (Head-Gordon-Tully) — likely out of scope
@@ -88,20 +88,20 @@ Place H trial positions at 4 chemistry classes:
 
 For each pair (i, j), estimate cheap MACE NEB barrier E_a^MACE:
 - If E_a^MACE > 2·|ΔE_ij| → standard ADMM-NEB OK
-- If E_a^MACE ≤ 2·|ΔE_ij| → switch to **string method (E, Ren, Vanden-Eijnden 2002 Phys Rev B 66:052301)** or growing string (Peters 2004) — robust к asymmetric thermodynamics
+- If E_a^MACE ≤ 2·|ΔE_ij| → switch to **string method (E, Ren, Vanden-Eijnden 2002 Phys Rev B 66:052301)** or growing string (Peters 2004) — robust to asymmetric thermodynamics
 - Per Liu-Chen-Ortner 2022: convergence rate degraded O(ΔE/E_a) — tight spring k≥0.5 eV/Å² + ≥9 images mandatory in any case
 
 **Force law (game-theorist recommendation):**
-Replace standard NEB spring+projection с **ADMM consensus updates (Boyd et al. 2011)**:
+Replace standard NEB spring+projection with **ADMM consensus updates (Boyd et al. 2011)**:
 ```
 x_i^{k+1} = argmin V(x_i) + (ρ/2) ||x_i - z_i||²
-z_i^{k+1} = median(x_{i-1}, x_i, x_{i+1})  # robust к outliers in asymmetric pocket
+z_i^{k+1} = median(x_{i-1}, x_i, x_{i+1})  # robust to outliers in asymmetric pocket
 λ_i^{k+1} = λ_i + ρ (x_i - z_i)
 ```
 
-**Provable convergence к stationary point** even in non-convex setting (Wang-Yin-Zeng 2019).
+**Provable convergence to stationary point** even in non-convex setting (Wang-Yin-Zeng 2019).
 
-**Triage:** Shapley-Castro Monte Carlo (Castro et al. 2009) с ~50 samples — identify top-3 rate-limiting transitions for prioritization, avoid full M(M-1)/2 NEB enumeration.
+**Triage:** Shapley-Castro Monte Carlo (Castro et al. 2009) with ~50 samples — identify top-3 rate-limiting transitions for prioritization, avoid full M(M-1)/2 NEB enumeration.
 
 **Cost:** ~$30 per NEB × 6-8 pairs (Shapley-triaged) = **~$200-250 total**
 
@@ -112,7 +112,7 @@ z_i^{k+1} = median(x_{i-1}, x_i, x_{i+1})  # robust к outliers in asymmetric po
 - ZPE = ½ ℏ Σ ω_i (only modes involving H significantly)
 - Optional: PIMD validation for top-3 dominant paths (REKKWP/i-PI, ~5 ps trajectory)
 
-**Why critical:** Fe-H bond ~1800 cm⁻¹ vs S-H ~2500 cm⁻¹ vs interstitial ~600 cm⁻¹ — ZPE difference Fe-hydride vs S-H **±80 meV** per saddle. Dominates uncertainty при barriers 100-200 meV.
+**Why critical:** Fe-H bond ~1800 cm⁻¹ vs S-H ~2500 cm⁻¹ vs interstitial ~600 cm⁻¹ — ZPE difference Fe-hydride vs S-H **±80 meV** per saddle. Dominates uncertainty at barriers 100-200 meV.
 
 **Cost:** ~$10 per Hessian × 6-8 = **~$60 total**
 
@@ -127,7 +127,7 @@ Construct **directed barrier graph** G = (V, E):
 
 **Equilibrium selection criterion (NOT Boltzmann):**
 - Find **minimum-energy spanning arborescence** rooted at lowest-energy site
-- Use **Chu-Liu-Edmonds algorithm** для directed minimum spanning tree
+- Use **Chu-Liu-Edmonds algorithm** for directed minimum spanning tree
 - Result: kinetically dominant transition network
 
 **Effective barrier (Kreuer 2003 framework):**
@@ -158,8 +158,8 @@ Construct **directed barrier graph** G = (V, E):
 - **PROCEED** to magnetic validation
 
 ### Gate G_v3.3: Pairwise NEB feasibility (after Step 6 cheap probe)
-- Probe cheapest pair с MACE NEB first
-- If E_a/ΔE > 1 для probe pair → standard ADMM-NEB OK → PROCEED full DFT NEBs
+- Probe cheapest pair with MACE NEB first
+- If E_a/ΔE > 1 for probe pair → standard ADMM-NEB OK → PROCEED full DFT NEBs
 - If E_a/ΔE < 1 → switch to string method (extra dev cost, but tractable)
 - If multiple pairs require string method → reconsider methodology scope
 
@@ -175,13 +175,13 @@ Construct **directed barrier graph** G = (V, E):
 
 ### Before pent: Validate on mack (sanity check)
 - Apply v3 to mack V_Fe
-- Should recover known 43 meV barrier через single dominant pathway
+- Should recover known 43 meV barrier via single dominant pathway
 - If v3 instead "discovers" multiple minima where mack has 2 → methodology over-enumeration
 - If v3 correctly identifies mack as single-pathway system → methodology distinguishes simple vs complex systems
 
 **Cost mack validation:** ~$50-100 (smaller system, ~half cost vs pent)
 
-### After pent: Out-of-sample tests на новых minerals
+### After pent: Out-of-sample tests on new minerals
 - violarite (Fd-3m cubane-bearing) — predict ASYMMETRY/multi-site
 - chalcopyrite (CuFeS₂ tetrahedral) — predict simple symmetric pathway
 - mooihoekite — predict ASYMMETRY
@@ -214,7 +214,7 @@ vs. risk of $400-800 wasted on naive pent NEB launch. **Net win even before pape
 
 ## Paper-Grade Contributions
 
-1. **Multi-endpoint asymmetric NEB framework** — generalizes classical NEB к complex pockets
+1. **Multi-endpoint asymmetric NEB framework** — generalizes classical NEB to complex pockets
 2. **Methodology validated on 4-mineral set** (mack/greig/pyr V_Fe successful + pent multi-site)
 3. **Stochastic-stability equilibrium selection** — Freidlin-Wentzell applied to chemical kinetics
 4. **ADMM-NEB force law** — provably convergent in non-convex setting
@@ -269,13 +269,13 @@ vs. risk of $400-800 wasted on naive pent NEB launch. **Net win even before pape
 
 **Key findings:**
 1. **Pent: Fe-hydride terminal site ~20 eV DEEPER than S-H** — confirms cubane Fe₄S₄ chemistry stabilization (Tard-Pickett 2009 precedent verified).
-2. **Mack: NO cubane → all 4 H site classes overlap в ~600 meV** — chemistry signature confirmed across mineral types.
-3. **μ-Fe-H-Fe bridging NOT deeper than terminal** — surprise, bridging penalized по cubane geometry constraints.
+2. **Mack: NO cubane → all 4 H site classes overlap within ~600 meV** — chemistry signature confirmed across mineral types.
+3. **μ-Fe-H-Fe bridging NOT deeper than terminal** — surprise, bridging penalized by cubane geometry constraints.
 4. **Bit-exact cross-instance reproducibility** for equivalent sites.
 5. **Multi-MLIP vs DFT:** MACE 30 eV overestimate (50%), CHGNet 0.1 eV underestimate (200×), DFT 20 eV (paper-grade arbiter).
 6. **Magstate variance issue:** 300-900 meV E spread driven by free-magnetization basin choice (physicist consilium flagged) — needs post-hoc grouping via the `analyze_screen_by_magstate` module.
 
 ⏸ Phase 3 (DFT BFGS relax top-7) — next step, ~$100, paper-grade endpoints
-⏸ Phase 5+ (Pairwise NEBs, Shapley triage) — после Phase 3
+⏸ Phase 5+ (Pairwise NEBs, Shapley triage) — after Phase 3
 
-**Next concrete action:** run the `analyze_screen_by_magstate` module against the master results table для magstate-grouped final ranking (Option C из pre-deploy consilium).
+**Next concrete action:** run the `analyze_screen_by_magstate` module against the master results table for magstate-grouped final ranking (Option C from pre-deploy consilium).

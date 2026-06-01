@@ -14,7 +14,7 @@ Key difference vs standard NEB:
 - Augmented Lagrangian: provable convergence even non-convex (Wang-Yin-Zeng 2019)
 - No tangent projection bias from |∇V·τ̂| condition (Sheppard 2008 caveat for asymmetric)
 
-Test: Müller-Brown 2D с asymmetric A↔B endpoints (ΔE ≈ 66 units), comparing
+Test: Müller-Brown 2D with asymmetric A↔B endpoints (ΔE ≈ 66 units), comparing
 standard NEB vs ADMM-NEB convergence behavior.
 """
 from __future__ import annotations
@@ -122,7 +122,7 @@ class StandardNEB:
         return tau / (norm + 1e-12)
 
     def step(self, eta=0.001):
-        """One iteration: gradient step с NEB projection."""
+        """One iteration: gradient step with NEB projection."""
         forces = []
         for i in range(self.N):
             if i in self.fixed_ends:
@@ -149,13 +149,13 @@ class StandardNEB:
 # ============================================================
 
 class ADMM_NEB:
-    """ADMM reformulation of NEB с tangent-aware split.
+    """ADMM reformulation of NEB with tangent-aware split.
 
     Wang-Yin-Zeng 2019: provable convergence even nonconvex.
 
     z_i = midpoint(x_{i-1}, x_{i+1}) — expected equidistant position
     Penalty (ρ/2)|x_i - z_i|² ≈ NEB spring tension with k_eff = ρ/2
-    Tangent split: V gradient ⊥ τ (drives к MEP), penalty ∥ τ (straightens path)
+    Tangent split: V gradient ⊥ τ (drives toward MEP), penalty ∥ τ (straightens path)
     """
 
     def __init__(self, endA, endB, n_images=9, rho=5.0, robust=False):
@@ -190,9 +190,9 @@ class ADMM_NEB:
         return tau / (norm + 1e-12)
 
     def x_update(self, eta=0.0005):
-        """ADMM x-step с perpendicular projection (per NEB physics).
+        """ADMM x-step with perpendicular projection (per NEB physics).
 
-        V gradient ⊥ tangent: drives image to MEP перпендикулярно к path
+        V gradient ⊥ tangent: drives image to MEP perpendicular to the path
         Penalty ∥ tangent: maintains equidistant spacing (NEB spring analog)
         Lagrange multipliers λ accumulate parallel residuals.
 
@@ -204,7 +204,7 @@ class ADMM_NEB:
                 continue
             tau = self.tangent(i)
 
-            # V perp gradient (drives к MEP)
+            # V perp gradient (drives toward MEP)
             grad_V = grad_V_MB(self.x[i])
             grad_V_perp = grad_V - np.dot(grad_V, tau) * tau
 
@@ -291,7 +291,7 @@ def benchmark(endA, endB, label, max_iter=2000, fmax_target=0.5):
     print(f"    barrier from endA: {barrier_std:.2f}")
 
     # ADMM-NEB hybrid (ADMM split + NEB perpendicular projection)
-    # rho=2 ≈ effective k_spring 1 — comparable к standard NEB
+    # rho=2 ≈ effective k_spring 1 — comparable to standard NEB
     neb_admm = ADMM_NEB(endA, endB, n_images=11, rho=2.0, robust=False)
     history_admm = []
     for it in range(max_iter):

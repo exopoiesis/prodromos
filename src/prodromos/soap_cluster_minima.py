@@ -7,7 +7,7 @@ Cluster by Smooth Overlap of Atomic Positions (SOAP) descriptor distance.
 Steps:
 1. For each relaxed structure: compute SOAP descriptor centered on H atom
 2. Pairwise SOAP distance matrix
-3. Hierarchical clustering (Agglomerative) с linkage threshold
+3. Hierarchical clustering (Agglomerative) with linkage threshold
 4. Output: cluster assignments + representative structure per cluster
 """
 from __future__ import annotations

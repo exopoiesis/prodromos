@@ -11,7 +11,7 @@ For ANY mineral with (pristine.xyz, endA.xyz, canonical_triple.json):
    - 0.1-1 Å → marginal, may work with care
    - > 1 Å → asymmetric pocket, standard symmetric NEB inapplicable
 
-Validates методику на known cases (mack/greig) + predicts new (pyr).
+Validates the methodology on known cases (mack/greig) + predicts new (pyr).
 """
 from __future__ import annotations
 import argparse
@@ -171,7 +171,7 @@ def run_test(mineral_name, pristine_path, endA_path, triple_path,
             pred = "NEB may work with care; minor pocket distortion"
         elif max_e < 1.5:
             verdict = "WEAK ASYMMETRY ⚠"
-            pred = "NEB feasible но possibly multi-saddle; expect convergence issues"
+            pred = "NEB feasible but possibly multi-saddle; expect convergence issues"
         else:
             verdict = "STRONG ASYMMETRY ✗"
             pred = "Symmetric MEP framework inapplicable; standard NEB likely fails"

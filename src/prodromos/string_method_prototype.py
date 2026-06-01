@@ -12,7 +12,7 @@ Mathematical advantage (per math consilium):
 - Decouples right axis: tangent fixed by geometry, normal by force
 - Provably converges to MEP (Vanden-Eijnden & Ren 2007 theorem)
 - No spring constant tuning
-- Robust к asymmetric endpoints
+- Robust to asymmetric endpoints
 
 Test: same Müller-Brown asymmetric cases where ADMM-NEB failed:
 - A→C (ΔE = -38): mild asymmetry
@@ -83,12 +83,12 @@ class StringMethod:
         L_total = s[-1]
         if L_total < 1e-9:
             return  # degenerate path
-        s_norm = s / L_total  # normalize к [0, 1]
+        s_norm = s / L_total  # normalize to [0, 1]
 
         # Uniform arclength target
         s_uniform = np.linspace(0, 1, self.N)
 
-        # Interpolate per dimension с cubic spline
+        # Interpolate per dimension with cubic spline
         new_x = np.zeros_like(self.x)
         for d in range(self.x.shape[1]):
             cs = CubicSpline(s_norm, self.x[:, d])

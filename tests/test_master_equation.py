@@ -21,7 +21,7 @@ class TestRateMatrix:
         assert np.all(np.diag(K) <= 0)
 
     def test_column_sum_zero(self, symmetric_barrier_matrix):
-        """Each column of K must sum к 0 (probability conservation)."""
+        """Each column of K must sum to 0 (probability conservation)."""
         K = rate_matrix(symmetric_barrier_matrix)
         col_sums = K.sum(axis=0)
         assert np.allclose(col_sums, 0, atol=1e-12)
@@ -71,7 +71,7 @@ class TestEquilibriumDistribution:
         assert P[0] == pytest.approx(P[1], rel=1e-3)
 
     def test_asymmetric_favors_low_E(self, asymmetric_barrier_matrix):
-        """Asymmetric с ΔE > 0 → low-E state dominates."""
+        """Asymmetric with ΔE > 0 → low-E state dominates."""
         K = rate_matrix(asymmetric_barrier_matrix, T_K=298)
         P = equilibrium_distribution(K)
         # Site 0 is low (forward barrier 250 > reverse 76 → ΔE = +174)
@@ -106,7 +106,7 @@ class TestArrheniusFit:
         assert result["E_a_eff_meV"] == pytest.approx(43.0, abs=2.0)
 
     def test_asymmetric_returns_reverse(self, asymmetric_barrier_matrix):
-        """Asymmetric с reverse 76 meV: slowest mode = reverse (depopulation of high-E)."""
+        """Asymmetric with reverse 76 meV: slowest mode = reverse (depopulation of high-E)."""
         result = arrhenius_fit(asymmetric_barrier_matrix)
         # Reverse barrier dominates relaxation timescale
         assert result["E_a_eff_meV"] == pytest.approx(76.0, abs=5.0)

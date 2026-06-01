@@ -8,7 +8,7 @@ from prodromos.admm_neb_prototype import V_MB, MB_MINIMA
 
 class TestStringMethodInit:
     def test_endpoints_set(self):
-        """Endpoints должны быть at correct positions."""
+        """Endpoints should be at correct positions."""
         endA = MB_MINIMA["A"]
         endB = MB_MINIMA["B"]
         sm = StringMethod(endA, endB, n_images=9)
@@ -31,7 +31,7 @@ class TestStringMethodInit:
 
 class TestReparametrize:
     def test_endpoints_preserved(self):
-        """Reparametrization не должна сдвигать endpoints."""
+        """Reparametrization must not move the endpoints."""
         endA = MB_MINIMA["A"]
         endB = MB_MINIMA["B"]
         sm = StringMethod(endA, endB, n_images=9)
@@ -43,7 +43,7 @@ class TestReparametrize:
 
     def test_equidistant_after_reparam(self):
         """After reparametrization, segments should be (nearly) equal length."""
-        # Start с non-equidistant path
+        # Start with non-equidistant path
         endA = np.array([0.0, 0.0])
         endB = np.array([1.0, 0.0])
         sm = StringMethod(endA, endB, n_images=5)
@@ -60,7 +60,7 @@ class TestReparametrize:
 class TestStringMethodConvergence:
     @pytest.mark.slow
     def test_converges_on_mb_symmetric(self):
-        """String method should converge на MB A→C (mild asymmetry)."""
+        """String method should converge on MB A→C (mild asymmetry)."""
         endA = MB_MINIMA["A"]
         endC = MB_MINIMA["C"]
         sm = StringMethod(endA, endC, n_images=11)
@@ -71,7 +71,7 @@ class TestStringMethodConvergence:
             if fmax < 1.0:
                 converged = True
                 break
-        assert converged, f"String method не сходится за {max_iter} итераций"
+        assert converged, f"String method did not converge in {max_iter} iterations"
 
     @pytest.mark.slow
     def test_recovers_mb_barrier(self):

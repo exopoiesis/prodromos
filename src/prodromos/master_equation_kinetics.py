@@ -1,7 +1,7 @@
 """
 Master Equation Kinetics + Min-Spanning Arborescence.
 
-Given barrier matrix В x M (M sites, with E_a_forward[i,j] = forward i→j barrier):
+Given barrier matrix M x M (M sites, with E_a_forward[i,j] = forward i→j barrier):
 1. Compute rate matrix K(T): k(i→j) = ν · exp(-E_a(i→j) / kT)
 2. Master equation: dP/dt = K^T · P → equilibrium + slowest relaxation timescale
 3. Arrhenius effective E_a: slope of ln(1/τ_eff) vs 1/kT
@@ -39,8 +39,8 @@ def rate_matrix(E_a_matrix: np.ndarray, T_K: float = DEFAULT_T_K,
                 nu: float = NU_HZ) -> np.ndarray:
     """Construct rate matrix from barrier matrix.
 
-    E_a_matrix[i, j] = forward barrier from state i к state j (eV)
-    If E_a_matrix[i, j] = inf или NaN → no direct transition.
+    E_a_matrix[i, j] = forward barrier from state i to state j (eV)
+    If E_a_matrix[i, j] = inf or NaN → no direct transition.
 
     Returns K (M, M):
     - K[j, i] = k(i→j) for j ≠ i (off-diagonal)
@@ -58,7 +58,7 @@ def rate_matrix(E_a_matrix: np.ndarray, T_K: float = DEFAULT_T_K,
             if np.isnan(E_a) or np.isinf(E_a) or E_a < 0:
                 continue
             k_ij = nu * np.exp(-E_a / kT)
-            K[j, i] += k_ij  # rate FROM i TO j contributes к dP_j/dt
+            K[j, i] += k_ij  # rate FROM i TO j contributes to dP_j/dt
             K[i, i] -= k_ij  # and decreases P_i
     return K
 
@@ -66,7 +66,7 @@ def rate_matrix(E_a_matrix: np.ndarray, T_K: float = DEFAULT_T_K,
 def equilibrium_distribution(K: np.ndarray) -> np.ndarray:
     """Solve K · P_eq = 0 (kernel of K)."""
     eigvals, eigvecs = eig(K)
-    # Find eigvalue closest к 0
+    # Find eigvalue closest to 0
     idx = np.argmin(np.abs(eigvals))
     P_eq = np.real(eigvecs[:, idx])
     P_eq = np.abs(P_eq)
@@ -126,7 +126,7 @@ def chu_liu_edmonds_arborescence(weight_matrix: np.ndarray, root: int = 0) -> li
     weight_matrix[i, j] = weight of edge i → j.
     Returns list of (parent, child) tuples for minimum arborescence.
 
-    Simple O(VE) implementation (sufficient для small graphs M ≤ 20).
+    Simple O(VE) implementation (sufficient for small graphs M ≤ 20).
     """
     M = weight_matrix.shape[0]
     # Each non-root node picks the cheapest incoming edge
@@ -143,7 +143,7 @@ def chu_liu_edmonds_arborescence(weight_matrix: np.ndarray, root: int = 0) -> li
         i_min, w_min = min(candidates, key=lambda x: x[1])
         parents[j] = i_min
 
-    # Check для cycles (simplified — for small graphs assume acyclic input)
+    # Check for cycles (simplified — for small graphs assume acyclic input)
     # Full Chu-Liu-Edmonds would do cycle contraction here
     edges = [(parents[j], j) for j in range(M) if parents[j] >= 0]
     return edges
@@ -308,7 +308,7 @@ def test_case_3_pent_multi_site():
     - S₃ window: +500 meV
     - S-H mono: +500 meV
 
-    Hypothetical barriers (illustrative для master equation framework):
+    Hypothetical barriers (illustrative for the master equation framework):
     """
     print("\n" + "=" * 70)
     print("TEST 3: Pent-like 4-site network (CHGNet-inspired hypothetical)")
@@ -319,9 +319,9 @@ def test_case_3_pent_multi_site():
 
     # Hypothetical barriers
     # μ-Fe-H-Fe ↔ Fe-H-term: 200 meV (cubane shuffling)
-    # Fe-H-term ↔ S₃-window: 150 meV (cubane к pocket transit)
+    # Fe-H-term ↔ S₃-window: 150 meV (cubane to pocket transit)
     # S₃-window ↔ S-H-mono: 100 meV (pocket walking)
-    # μ-Fe-H-Fe → S-H-mono direct: 500 meV (deep к surface)
+    # μ-Fe-H-Fe → S-H-mono direct: 500 meV (deep to surface)
     # All others: inf (no direct transition)
     E_a = np.full((4, 4), np.inf)
 
@@ -334,9 +334,9 @@ def test_case_3_pent_multi_site():
     # Actually for asymmetric: if E_i < E_j, E_a(i→j) > E_a(j→i) since reverse barrier = E_a(i→j) - (E_j - E_i)
     # Need to verify barriers are physical (positive)
 
-    # Reset с physically consistent barriers
+    # Reset with physically consistent barriers
     E_a = np.full((4, 4), np.inf)
-    # All site pairs connected с barriers (forward, reverse based on ΔE)
+    # All site pairs connected with barriers (forward, reverse based on ΔE)
     pairs = [
         (0, 1, 0.250),   # GS → site2: 250 meV forward
         (0, 2, 0.300),

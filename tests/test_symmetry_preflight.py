@@ -47,7 +47,7 @@ class TestApplyR:
         assert new_pos.shape == atoms.get_positions().shape
 
     def test_inversion_inverts_positions(self):
-        """R = -I should invert через origin."""
+        """R = -I should invert through the origin."""
         # Test smaller structure
         atoms = Atoms(
             symbols=["Fe", "Fe"],
@@ -60,13 +60,13 @@ class TestApplyR:
         new_pos = apply_R(atoms, R, t)
         # Position (1,0,0) → (-1, 0, 0) mod cell
         # Position (-1,0,0) → (1, 0, 0) mod cell
-        # After wrap к [0, 10): (1,0,0) and (9,0,0) etc.
+        # After wrap to [0, 10): (1,0,0) and (9,0,0) etc.
         assert new_pos.shape == (2, 3)
 
 
 class TestHungarianMatch:
     def test_self_match_no_displacement(self):
-        """Matching atoms к themselves: zero permutation cost."""
+        """Matching atoms to themselves: zero permutation cost."""
         atoms = _simple_cubic_structure()
         pos = atoms.get_positions()
         syms = atoms.get_chemical_symbols()
@@ -93,8 +93,8 @@ class TestHungarianMatch:
         assert np.allclose(costs, 0, atol=1e-10)
 
     def test_element_constraint_respected(self):
-        """Hungarian should match Fe к Fe, S к S only."""
-        # Build two structures с same atom positions but different element ordering
+        """Hungarian should match Fe to Fe, S to S only."""
+        # Build two structures with same atom positions but different element ordering
         pos = np.array([
             [0, 0, 0],   # site 1
             [1, 0, 0],   # site 2
@@ -104,8 +104,8 @@ class TestHungarianMatch:
         cell = np.eye(3) * 5
 
         perm, costs = hungarian_match(pos, pos, syms_A, syms_B, cell)
-        # Fe в A maps к Fe в B (which is at site 2)
-        # S в A maps к S в B (which is at site 1)
+        # Fe in A maps to Fe in B (which is at site 2)
+        # S in A maps to S in B (which is at site 1)
         # So perm[0] = 1 (Fe target index), perm[1] = 0 (S target index)
         assert perm[0] == 1
         assert perm[1] == 0
@@ -116,7 +116,7 @@ class TestHungarianMatch:
 
 class TestFindQualifyingOp:
     def test_identity_qualifies_for_self_map(self):
-        """Identity op trivially maps any atom к itself."""
+        """Identity op trivially maps any atom to itself."""
         atoms = _simple_cubic_structure()
         # S_i = same as S_k = same atom
         S_idx = 4  # first S
@@ -125,5 +125,5 @@ class TestFindQualifyingOp:
             # Identity should be one of the ops (S → same S, V_Fe → same)
             assert len(ops) >= 1
         except (ValueError, IndexError):
-            # find_qualifying_op might not find identity если не правильно сконфигурирован
+            # find_qualifying_op might not find identity if not configured correctly
             pytest.skip("find_qualifying_op test setup needs review")

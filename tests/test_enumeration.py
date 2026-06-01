@@ -1,4 +1,4 @@
-"""Tests для multi_endpoint_enumeration.py."""
+"""Tests for multi_endpoint_enumeration.py."""
 from pathlib import Path
 import numpy as np
 import pytest
@@ -24,9 +24,9 @@ class TestMicVec:
         np.testing.assert_allclose(v, [1, 0, 0])
 
     def test_pbc_wrap(self):
-        """Точки on opposite sides of cell wrap via MIC."""
+        """Points on opposite sides of cell wrap via MIC."""
         cell = np.eye(3) * 10
-        # From (1, 0, 0) к (9, 0, 0): direct = 8, but MIC = -2
+        # From (1, 0, 0) to (9, 0, 0): direct = 8, but MIC = -2
         v = mic_vec(np.array([1, 0, 0]), np.array([9, 0, 0]), cell)
         # MIC: difference should be -2 (shorter than +8)
         np.testing.assert_allclose(np.abs(v[0]), 2.0, atol=1e-10)
@@ -75,7 +75,7 @@ class TestRemoveAtomAndAddH:
         np.testing.assert_allclose(new.get_positions()[h_idx_list[0]], h_pos)
 
     def test_other_atoms_preserved(self):
-        """Atoms не at V_idx должны сохранить positions."""
+        """Atoms not at V_idx should keep their positions."""
         atoms = Atoms(
             symbols=["Fe", "Fe", "S"],
             positions=np.array([[0, 0, 0], [5, 5, 5], [2, 2, 2]]),

@@ -35,7 +35,7 @@ from ase.io import read
 from prodromos.cli_contract import dump_json, response_envelope
 
 
-# Thresholds (calibrated на 5-mineral validation set)
+# Thresholds (calibrated on the 5-mineral validation set)
 THRESHOLDS = {
     "cubane_FeFe_distance": 3.5,      # Å, Fe-Fe < this counts as cubane edge
     "cubane_min_count": 3,             # ≥3 close Fe-Fe → cubane motif
@@ -56,7 +56,7 @@ def mic_distance(p1, p2, cell):
 
 
 class VFeNEBPreflight:
-    """Pre-flight checker для V_Fe NEB feasibility."""
+    """Pre-flight checker for V_Fe NEB feasibility."""
 
     def __init__(self, pristine_xyz, V_Fe_index, mineral_name=None):
         self.atoms = read(pristine_xyz)
@@ -359,7 +359,7 @@ class VFeNEBPreflight:
 # ============================================================
 
 def test_validation_set():
-    """Apply pre-flight tool на 5 minerals (4 known V_Fe + pyr V_S₂ for symmetry)."""
+    """Apply pre-flight tool to 5 minerals (4 known V_Fe + pyr V_S₂ for symmetry)."""
     cases = [
         {
             "mineral": "mack V_Fe (known 43 meV)",
