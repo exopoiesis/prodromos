@@ -43,3 +43,21 @@ What stays internal (not published): per-mineral campaign result records, DFT-de
 dated consilia, session checkpoints, infra/cost specifics, and raw genesis idea-dumps. The
 project's private working folder keeps those and now points *into* this repo for anything
 shareable.
+
+## D-004 (2026-06-01) — All framework improvement items implemented; MCP-ready
+
+The full open backlog (N-01…N-15) is implemented: 4 new gates (`external-reference`,
+`lint-dft-script`, `h-barrier-readiness`, `endpoint-provenance`) and enhancements to the
+parity, method-advisor, magnetic, and symmetry gates. Every gate now exposes a pure
+`run_*(...) -> dict` returning the shared `cli_contract` envelope, plus a `prodromos`
+subcommand (19 total). This is the "ready for MCP" state: the planned MCP server is a thin
+adapter over the `run_*` functions, no further gate work required.
+
+Test suite is fully self-contained for CI: previously data-gated tests now run against
+scrubbed marc/pyrite DFT fixtures committed under `tests/fixtures/` (paths/usernames
+stripped). **353 passed, 0 skipped.**
+
+Public-hygiene pass: internal session ids, absolute machine paths, and references to
+unpublished back-office docs were stripped from source comments/docstrings and demo
+runners; all docs and code comments are English. Line endings normalized to LF via
+`.gitattributes`.
