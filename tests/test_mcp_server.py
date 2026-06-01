@@ -44,6 +44,9 @@ _EXPECTED_TOOLS = {
     "magnetic_endpoint",
     "magnetic_band",
     "magnetic_recommend",
+    "import_optimade",
+    "import_nomad",
+    "merge_specs",
 }
 
 
@@ -114,3 +117,120 @@ def test_electron_parity_odd_count_envelope():
     env = mcp_server.tool_electron_parity(symbol_counts={"Fe": 31, "S": 64, "H": 1})
     assert env["tool"]
     assert env["verdict"] is not None
+
+
+# ---------------------------------------------------------------------------
+# tm-spec importers + merge (OPTIMADE width x NOMAD depth, all local)
+# ---------------------------------------------------------------------------
+
+# A NOMAD-like base: deep (method.level + magnetic + results) but a sparse
+# structure (formula only, no lattice / pbc / dimension_types).
+_NOMAD_LIKE_BASE = {
+    "spec": "tm-spec/0.3",
+    "kind": "SinglePointCalculation",
+    "id": "tm.nomad.synthetic_fes2.2026-06-02",
+    "schema_url": "https://exopoiesis.github.io/tm-spec/0.3.json",
+    "structure": {
+        "formula": "FeS2",
+        "chemical_formula_reduced": "FeS2",
+        "geometry_origin": "dft_static",
+    },
+    "calculation": {
+        "method": "DFT+U",
+        "level": {
+            "xc": "GGA",
+            "xc_libxc": ["GGA_X_PBE", "GGA_C_PBE"],
+            "basis": {"kind": "plane_waves"},
+            "spin": "collinear",
+        },
+        "code": {"name": "VASP", "version": "6.3.2"},
+    },
+    "magnetic": {"state": "AFM-G", "collinear": True},
+    "results": {"status": "PRELIMINARY", "paper_quotable": False, "energy_eV": -42.0},
+    "sanity": [{"id": "G05_scf_converged", "rule": "SCF converged", "pass": True}],
+    "provenance": {
+        "date": "2026-06-02",
+        "author": "import@nomad",
+        "import_source": {"archive": "nomad", "entry_id": "synthetic_fes2"},
+        "compute": {"host": "nomad-archive", "cost_usd": 0.0},
+    },
+}
+
+# An OPTIMADE-like overlay: shallow (no method/energy) but broad structure
+# (lattice_vectors_A + pbc + dimension_types), geometry_origin=unknown.
+_OPTIMADE_LIKE_OVERLAY = {
+    "spec": "tm-spec/0.3",
+    "kind": "SinglePointCalculation",
+    "id": "tm.optimade_mp.mp_226.2026-06-02",
+    "schema_url": "https://exopoiesis.github.io/tm-spec/0.3.json",
+    "structure": {
+        "formula": "FeS2",
+        "chemical_formula_reduced": "FeS2",
+        "chemical_formula_anonymous": "AB2",
+        "lattice_vectors_A": [[5.4, 0.0, 0.0], [0.0, 5.4, 0.0], [0.0, 0.0, 5.4]],
+        "pbc": [True, True, True],
+        "dimension_types": [1, 1, 1],
+        "geometry_origin": "unknown",
+    },
+    "calculation": {"method": "DFT"},
+    "results": {"status": "PRELIMINARY", "paper_quotable": False},
+    "sanity": [{"id": "G06_ascii_safe", "rule": "ASCII-only doc body", "pass": "skip"}],
+    "provenance": {
+        "date": "2026-06-02",
+        "author": "import@optimade",
+        "import_source": {"archive": "materials_project", "entry_id": "mp-226"},
+        "compute": {"host": "optimade:mp", "cost_usd": 0.0},
+    },
+}
+
+
+def test_import_optimade_offline_graceful():
+    """Offline OPTIMADE import returns a well-formed envelope (no crash, empty)."""
+    env = mcp_server.tool_import_optimade(elements=["Fe", "S"], live=False)
+    assert env["tool"] == "import_optimade"
+    assert env["status"] == "ok"
+    assert env["count"] == 0
+    assert env["docs"] == []
+    assert isinstance(env["reasons"], list) and env["reasons"]
+
+
+def test_merge_specs_combines_depth_and_width():
+    """merge_specs folds OPTIMADE width into NOMAD depth: merged carries BOTH the
+    calculation.level + magnetic (depth) AND the structure lattice/pbc (width)."""
+    env = mcp_server.tool_merge_specs(
+        base=_NOMAD_LIKE_BASE,
+        overlay=_OPTIMADE_LIKE_OVERLAY,
+    )
+    assert env["tool"] == "merge_specs"
+    assert env["status"] == "ok"
+    assert isinstance(env["warnings"], list)
+
+    merged = env["merged"]
+    # NOMAD depth preserved.
+    assert merged["calculation"]["method"] == "DFT+U"
+    assert merged["calculation"]["level"]["xc"] == "GGA"
+    assert merged["magnetic"]["state"] == "AFM-G"
+    assert merged["results"]["energy_eV"] == -42.0
+    # OPTIMADE width filled into the sparse base structure.
+    assert merged["structure"]["lattice_vectors_A"][0][0] == 5.4
+    assert merged["structure"]["pbc"] == [True, True, True]
+    assert merged["structure"]["dimension_types"] == [1, 1, 1]
+    # geometry_origin keeps the more specific base value over overlay 'unknown'.
+    assert merged["structure"]["geometry_origin"] == "dft_static"
+
+
+def test_merge_specs_material_mismatch_is_error_not_exception():
+    """A formula mismatch returns status='error' (MATERIAL_MISMATCH), not a raise."""
+    overlay = {
+        **_OPTIMADE_LIKE_OVERLAY,
+        "structure": {
+            "formula": "NiO",
+            "chemical_formula_reduced": "NiO",
+            "geometry_origin": "unknown",
+        },
+    }
+    env = mcp_server.tool_merge_specs(base=_NOMAD_LIKE_BASE, overlay=overlay)
+    assert env["tool"] == "merge_specs"
+    assert env["status"] == "error"
+    assert env["merged"] is None
+    assert any("MATERIAL_MISMATCH" in w for w in env["warnings"])

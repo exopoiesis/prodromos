@@ -1,8 +1,11 @@
 """Thin in-process stdio MCP server for prodromos.
 
-Exposes the $0 pre-flight gates, the ``plan`` orchestrator, and the
-``from-inputs`` onboarding converter as MCP tools over stdio (no proxy, no
-network, no Docker). Every gate's core is already a pure ``run_*(...) -> dict``
+Exposes the $0 pre-flight gates, the ``plan`` orchestrator, the
+``from-inputs`` onboarding converter, and the tm-spec OPTIMADE/NOMAD importers
+plus the local ``merge`` engine (``import_optimade`` / ``import_nomad`` /
+``merge_specs``) as MCP tools over stdio (no proxy, no Docker; the importers are
+the only tools that touch the network, and degrade softly when offline). Every
+gate's core is already a pure ``run_*(...) -> dict``
 returning a ``cli_contract.response_envelope``; each MCP tool here is a thin,
 typed module-level wrapper (``tool_<name>``) that calls the corresponding core
 and returns the envelope (FastMCP serializes the dict to JSON for the LLM).
@@ -557,6 +560,194 @@ def tool_magnetic_recommend(
 
 
 # ===========================================================================
+# 4. tm-spec importers + merge -- OPTIMADE width x NOMAD depth, all local
+# ===========================================================================
+def tool_import_optimade(
+    elements: list[str] | None,
+    reduced_formula: str | None = None,
+    provider: str = "mp",
+    page_limit: int = 20,
+    raw_filter: str | None = None,
+    live: bool = True,
+) -> dict:
+    """Query the OPTIMADE federation (MP/NOMAD/OQMD/...) for structures of a
+    composition; returns tm-spec/0.3 docs (structure-level, geometry_origin=unknown)
+    ready for plan/merge.
+
+    ``elements`` e.g. ``["Fe", "S"]`` builds an ``elements HAS ALL`` filter; pass
+    ``reduced_formula`` (e.g. ``"FeS2"``) for an exact reduced-formula query, or a
+    verbatim ``raw_filter``. ``provider`` is one of ``mp`` (default) / ``nomad`` /
+    ``oqmd`` / ``alexandria``. Set ``live=False`` for offline (returns no docs).
+
+    Each returned doc is a structure-only ``SinglePointCalculation`` with
+    ``calculation={"method": "DFT"}`` stub and ``structure.geometry_origin
+    ="unknown"`` (OPTIMADE never reports relaxation/XC/energy). Merge one of these
+    (width) into a NOMAD import (depth) with ``merge_specs``.
+
+    For NOMAD method/results *depth* by entry_id use ``import_nomad`` (or the CLI
+    ``tm-spec import-nomad <entry_id>``).
+
+    Degrades softly: a network error / empty result yields ``status`` +
+    ``reasons`` instead of raising.
+    """
+    from tm_spec.importers.optimade import OptimadeError, import_optimade
+
+    try:
+        docs = import_optimade(
+            elements=elements,
+            reduced_formula=reduced_formula,
+            provider=provider,
+            page_limit=page_limit,
+            raw_filter=raw_filter,
+            live=live,
+        )
+    except OptimadeError as exc:
+        return {
+            "tool": "import_optimade",
+            "status": "error",
+            "count": 0,
+            "docs": [],
+            "reasons": [f"OPTIMADE query failed: {exc}"],
+        }
+    except Exception as exc:  # network / parse / unexpected -- never raise to the LLM
+        return {
+            "tool": "import_optimade",
+            "status": "error",
+            "count": 0,
+            "docs": [],
+            "reasons": [f"unexpected error querying OPTIMADE: {exc}"],
+        }
+
+    reasons: list[str] = []
+    if not docs:
+        reasons.append(
+            "offline mode: no network call made"
+            if not live
+            else f"no structures returned by provider {provider!r} for the given filter"
+        )
+    else:
+        reasons.append(
+            f"imported {len(docs)} OPTIMADE structure doc(s) from provider "
+            f"{provider!r} (structure-level, geometry_origin=unknown)"
+        )
+    return {
+        "tool": "import_optimade",
+        "status": "ok",
+        "count": len(docs),
+        "docs": docs,
+        "reasons": reasons,
+    }
+
+
+def tool_import_nomad(
+    entry_id: str,
+    author: str = "import@nomad",
+) -> dict:
+    """Import a single NOMAD Archive entry (method / XC / magnetic / energy DEPTH)
+    into a tm-spec/0.3 doc by ``entry_id``.
+
+    NOMAD archive entries carry the calculation method, XC functional, spin
+    treatment and energies that OPTIMADE lacks -- this is the *depth* side that
+    pairs with ``import_optimade`` *width* via ``merge_specs``. The kind is
+    detected from the NOMAD workflow (SinglePoint / Relax / MD) and
+    ``structure.geometry_origin`` is set honestly (never fabricated as
+    ``dft_relaxed``).
+
+    ``entry_id`` is a NOMAD entry id (e.g. ``zRzA8h0p1q...``); ``author`` fills
+    ``provenance.author``. Anonymous reads suffice for public entries (set the
+    ``NOMAD_API_TOKEN`` env var for private ones).
+
+    Degrades softly: a network / HTTP error yields ``status`` + ``reasons``
+    instead of raising.
+    """
+    from tm_spec.importers.nomad import NomadError, fetch_to_tm_spec
+
+    try:
+        doc = fetch_to_tm_spec(entry_id, author=author)
+    except NomadError as exc:
+        return {
+            "tool": "import_nomad",
+            "status": "error",
+            "count": 0,
+            "docs": [],
+            "reasons": [f"NOMAD import failed: {exc}"],
+        }
+    except Exception as exc:  # never raise to the LLM
+        return {
+            "tool": "import_nomad",
+            "status": "error",
+            "count": 0,
+            "docs": [],
+            "reasons": [f"unexpected error importing NOMAD entry {entry_id!r}: {exc}"],
+        }
+
+    return {
+        "tool": "import_nomad",
+        "status": "ok",
+        "count": 1,
+        "docs": [doc],
+        "reasons": [
+            f"imported NOMAD entry {entry_id!r} as kind={doc.get('kind')!r} "
+            f"(geometry_origin={(doc.get('structure') or {}).get('geometry_origin')!r})"
+        ],
+    }
+
+
+def tool_merge_specs(
+    base: dict,
+    overlay: dict,
+    fill_only: bool = True,
+    strict_material: bool = True,
+) -> dict:
+    """Merge two tm-spec docs locally: NOMAD depth (method/magnetic/results) x
+    OPTIMADE width (structure). Fill-only; same-material guard.
+
+    ``base`` / ``overlay`` are tm-spec docs as dicts (pass them as JSON). The
+    deep ``base`` (typically a NOMAD import) keeps precedence; ``overlay``
+    (typically an OPTIMADE import) only fills holes. ``geometry_origin`` keeps the
+    more specific value, provenance import_source records are unioned, and sanity
+    gates are merged by id.
+
+    With ``strict_material=True`` (default) a formula mismatch returns
+    ``status="error"`` (MATERIAL_MISMATCH) rather than raising; set it ``False``
+    to downgrade the mismatch to a warning and merge anyway. ``fill_only=False``
+    lets overlay scalars win on conflict.
+
+    Returns ``{"tool": "merge_specs", "status", "merged": <doc>, "warnings": [...]}``.
+    """
+    from tm_spec.merge import MergeError, merge_docs
+
+    try:
+        merged, warnings = merge_docs(
+            base,
+            overlay,
+            fill_only=fill_only,
+            strict_material=strict_material,
+        )
+    except MergeError as exc:
+        return {
+            "tool": "merge_specs",
+            "status": "error",
+            "merged": None,
+            "warnings": [str(exc)],
+        }
+    except Exception as exc:  # never raise to the LLM
+        return {
+            "tool": "merge_specs",
+            "status": "error",
+            "merged": None,
+            "warnings": [f"unexpected merge error: {exc}"],
+        }
+
+    return {
+        "tool": "merge_specs",
+        "status": "ok",
+        "merged": merged,
+        "warnings": list(warnings),
+    }
+
+
+# ===========================================================================
 # registration
 # ===========================================================================
 # (tool_name -> wrapper). Names are snake_case (MCP requires valid identifiers).
@@ -582,6 +773,9 @@ _TOOLS: dict[str, Any] = {
     "magnetic_endpoint": tool_magnetic_endpoint,
     "magnetic_band": tool_magnetic_band,
     "magnetic_recommend": tool_magnetic_recommend,
+    "import_optimade": tool_import_optimade,
+    "import_nomad": tool_import_nomad,
+    "merge_specs": tool_merge_specs,
 }
 
 for _name, _fn in _TOOLS.items():
