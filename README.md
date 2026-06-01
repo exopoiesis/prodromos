@@ -80,12 +80,12 @@ validated on analytic potentials.
 See [`QUICK_START.md`](QUICK_START.md) for the end-to-end pipeline (inputs → verdict)
 and how to interpret a harvested NEB result.
 
-## Knowledge base (back-office)
+## Documentation
 
-The deep methodology, theory, per-mineral campaign records, consilia, and the genesis
-of the game-theoretic formulation live in the **`dft-neb/`** back-office of the Third
-Matter project (the trackers and research record), not in this repo. This repository
-ships the *tool*; `dft-neb/` keeps the *knowledge*. Cross-references in `docs/`.
+The methodology, theory, and playbooks behind the gates are in [`docs/`](docs/):
+the Evidence Framework (L0→L6), the 7 convergence conditions (C1–C7), the
+game-theoretic foundations, the magnetic-first logic, the NEB-stall playbook, and the
+positioning against alternative MEP formulations. Start at [`docs/README.md`](docs/README.md).
 
 ## Project
 

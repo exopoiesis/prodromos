@@ -29,12 +29,17 @@ new package (independently verified, editable install from `src/prodromos`).
 `gudhi` and `pot` added to dependencies — `ph_neb_diagnostic` (persistent-homology path
 diagnostic) requires them.
 
-## D-003 (2026-06-01) — Code ships here, knowledge stays in `dft-neb/`
+## D-003 (2026-06-01) — Public repo is self-contained; only internal records stay back-office
 
-Per the Third Matter rule "knowledge → `knowledge/`/back-office, not duplicated": the
-shipping *tool* (code, tests, CLI, README, QUICK_START, ROADMAP, DECISIONS) lives in this
-repo; the *knowledge* (Evidence Framework v2 derivation, the 7 convergence conditions, the
-game-theoretic foundations, magnetic-NEB consilia, per-mineral campaign records, session
-checkpoints, deploy plans, the running improvement log) stays in `dft-neb/` as the
-back-office knowledge base and tracker. Methodology docs are **not** duplicated into the
-repo; `docs/` cross-references them. This keeps a single source of truth.
+This repository is **public** (for collaborators), so anything useful to others must live
+here, self-contained. The shareable methodology, theory, and playbooks were sanitized
+(stripped of internal session ids, infra names, instance ids, internal file/decision refs,
+private email) and moved into [`docs/`](docs/) as their **canonical** home — 9 documents
+covering the Evidence Framework (L0→L6), the 7 convergence conditions (C1–C7), the
+game-theoretic foundations, magnetic-first logic, the NEB-stall playbook, the method-advisor
+design, and positioning. New shareable material is added **here**, not in private notes.
+
+What stays internal (not published): per-mineral campaign result records, DFT-deploy plans,
+dated consilia, session checkpoints, infra/cost specifics, and raw genesis idea-dumps. The
+project's private working folder keeps those and now points *into* this repo for anything
+shareable.

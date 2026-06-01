@@ -1,31 +1,40 @@
 # Prodromos — docs
 
-This repo ships the **tool**. The **knowledge base** (theory, methodology derivation,
-campaign records, consilia, genesis) is kept in the Third Matter `dft-neb/` back-office,
-not duplicated here. Pointers below.
+Methodology, theory, and playbooks behind the gates. This is the canonical home for
+the shareable documentation — read here, and **add new shareable material here**, not
+in any private working notes.
 
-## Operational docs (in this repo)
+## Methodology
 
-- [`../README.md`](../README.md) — what Prodromos is, the Evidence Framework layers, install, CLI.
-- [`../QUICK_START.md`](../QUICK_START.md) — end-to-end pipeline, every subcommand.
-- [`../ROADMAP.md`](../ROADMAP.md) — open product items (P0/P1/P2) + the MCP-server next step.
-- [`../DECISIONS.md`](../DECISIONS.md) — naming, packaging, code-vs-knowledge split.
+- [`EVIDENCE_FRAMEWORK_V2_COMPLETE.md`](EVIDENCE_FRAMEWORK_V2_COMPLETE.md) — the end-to-end
+  L0→L6 pipeline: cheapest test first, stop at the first hard diagnosis.
+- [`MULTI_ENDPOINT_METHODOLOGY_V3.md`](MULTI_ENDPOINT_METHODOLOGY_V3.md) — 8-step protocol for
+  asymmetric multi-endpoint systems (when a symmetric NEB does not apply).
+- [`MAGNETIC_FIRST_PREFLIGHT_PLAN.md`](MAGNETIC_FIRST_PREFLIGHT_PLAN.md) — magnetic-first
+  logic for nspin=2 minerals: parity → spin-collapse → endpoint/band sheet gates → routing.
 
-## Knowledge base (Third Matter `dft-neb/` back-office)
+## Theory
 
-| Topic | Document |
-|-------|----------|
-| End-to-end methodology (L0→L6) | `dft-neb/EVIDENCE_FRAMEWORK_V2_COMPLETE.md` |
-| 7 sufficient convergence conditions (C1–C7) | `dft-neb/THEORY_PENT_CONVERGENCE.md` |
-| Asymmetric multi-endpoint protocol | `dft-neb/MULTI_ENDPOINT_METHODOLOGY_V3.md` |
-| Magnetic-first pre-flight logic | `dft-neb/MAGNETIC_FIRST_PREFLIGHT_PLAN.md` |
-| Magnetic-NEB consilium | `dft-neb/MAGNETIC_NEB_CONSILIUM_2026-05-29.md` |
-| "NEB stuck" diagnosis playbook | `dft-neb/NEB_STALL_DIAGNOSTIC_PLAYBOOK.md` |
-| NEB method advisor design | `dft-neb/NEB_METHOD_ADVISOR_DESIGN.md` |
-| Game-theoretic foundations (same-basin = equilibrium selection) | `dft-neb/GAME_THEORETIC_NEB_FOUNDATIONS.md` |
-| Genesis (Igor's "caravan over the mountain pass") | `dft-neb/neb with game theory.md` |
-| "Physics engine for atoms" idea + review | `dft-neb/intro.md` |
-| Landscape of alternative MEP formulations | `dft-neb/ALTERNATIVES_AND_ROLE_AWARE_NEB.md` |
-| How the methodology evolved | `dft-neb/METHODOLOGY_HISTORY.md` |
-| Running product-improvement log (N-01…) | `dft-neb/FRAMEWORK_IMPROVEMENT_NOTES.md` |
-| Per-mineral campaign results | `dft-neb/ph-diagnostic/RESULTS_*.md` |
+- [`GAME_THEORETIC_NEB_FOUNDATIONS.md`](GAME_THEORETIC_NEB_FOUNDATIONS.md) — the
+  game-theoretic framing: same-basin trap as an equilibrium-selection problem, NEB-AGM,
+  links to ADMM / persistent homology / Freidlin-Wentzell / mean-field games.
+- [`THEORY_PENT_CONVERGENCE.md`](THEORY_PENT_CONVERGENCE.md) — the 7 sufficient conditions
+  (C1–C7) for NEB convergence to the true MEP, worked through a real V_Fe case.
+
+## Playbooks & design
+
+- [`NEB_STALL_DIAGNOSTIC_PLAYBOOK.md`](NEB_STALL_DIAGNOSTIC_PLAYBOOK.md) — "my NEB is stuck":
+  a $0 procedure to tell spring/optimizer vs endpoint vs same-basin vs magnetic-sheet.
+- [`NEB_METHOD_ADVISOR_DESIGN.md`](NEB_METHOD_ADVISOR_DESIGN.md) — design of the method
+  advisor (failure-signature → method: band tune / dimer+chemical-RC / string).
+
+## Positioning
+
+- [`ALTERNATIVES_AND_ROLE_AWARE_NEB.md`](ALTERNATIVES_AND_ROLE_AWARE_NEB.md) — landscape of
+  inequivalent MEP formulations and the "role-aware NEB" idea.
+- [`other_tools.md`](other_tools.md) — related tools and where Prodromos sits among them.
+
+---
+
+For how to *run* the gates, see [`../QUICK_START.md`](../QUICK_START.md). Open product
+items are in [`../ROADMAP.md`](../ROADMAP.md).
