@@ -9,12 +9,32 @@ than the next — **stop as soon as a hard diagnosis is found.**
 ```bash
 python -m venv .venv
 .venv/Scripts/python.exe -m pip install -e ".[dev]"   # Windows
-.venv/Scripts/python.exe -m pytest -q                  # expect: 206 passed
+.venv/Scripts/python.exe -m pytest -q                  # expect: 448 passed
 ```
 
 All gates run either as `prodromos <subcommand> ...` (installed console script) or
 `python -m prodromos.<module> ...`. Add `--json` for machine output and
 `--output result.json` to persist the envelope.
+
+## Start here (one command, zero manual setup)
+
+If you only have your own DFT input files, the orchestrator converts and plans in one go:
+
+```bash
+prodromos plan my_neb.in            # QE/ABACUS input -> auto-converted -> pre-flight plan
+prodromos plan case.tm.yaml         # or start from a tm-spec/0.3 document
+prodromos plan case.tm.yaml --mode tree --budget-usd 400   # scored strategy tree (Pareto/CVaR)
+```
+
+To only convert an input into a tm-spec/0.3 document (a starting case to edit):
+
+```bash
+prodromos from-inputs my_run.in --date 2026-06-02 --output case.tm.yaml
+```
+
+`plan` walks the policy graph, runs the $0 gates it can, and returns the recommended next
+step (route mode) or a scored set of strategies (tree mode). The steps below are the
+underlying gates, runnable individually for fine control.
 
 ## Pipeline (cheapest → most expensive)
 
@@ -91,11 +111,17 @@ prodromos master-equation ...                 # Freidlin-Wentzell network kineti
 `h-barrier-readiness` gates a quoted barrier as `PAPER_GRADE` only with a confirmed
 single H-dominated imaginary mode and a reported ΔZPE‡; otherwise `ELECTRONIC_ONLY`.
 
-## JSON / MCP contract
+## JSON / MCP server
 
 Every gate returns the same envelope shape (`prodromos.cli_contract.response_envelope`):
 `tool, version, status, verdict, confidence, reasons, next_actions, artifacts,
-warnings, result`. This is what a future MCP server (see `ROADMAP.md`) exposes per gate.
+warnings, result`. A thin in-process **stdio MCP server** (`prodromos-mcp`, install with
+`pip install -e ".[mcp]"`) exposes `plan`, `from_inputs`, and one tool per gate to an LLM
+agent — no proxy, no network, no Docker. Register it with an MCP client:
+
+```json
+{ "mcpServers": { "prodromos": { "command": "prodromos-mcp" } } }
+```
 
 ## Deep methodology
 

@@ -5,21 +5,31 @@ framework to real Fe–S DFT NEB campaigns (observed gap → proposed fix → st
 Severity: **P0** = silent wrong verdict · **P1** = missing a gate a campaign needed ·
 **P2** = ergonomics / robustness.
 
-## Next: MCP server
+## Now shipped: orchestrator, converters, MCP
 
-All gates are now implemented and uniformly expose the shared `cli_contract` JSON
-envelope (`verdict / confidence / reasons / next_actions / artifacts / warnings /
-result`) through a `run_*` entry point plus a `prodromos <subcommand>` CLI. The
-remaining highest-leverage step is the **MCP server** that surfaces each gate as an
-independent tool so agents can call them and consume structured verdicts.
+The framework is no longer a set of standalone gates — it is an orchestrated tool:
 
-Every gate ships a pure `run_*(...) -> dict` function with no argparse/stdout side
-effects, so the MCP layer is a thin adapter over those functions.
+- **`plan` orchestrator** — route mode (myopic value-of-information, EXECUTEs $0 gates)
+  and tree mode (Bellman expectimax + CVaR + Beta-Binomial calibration over a PolicyGraph);
+  case = a tm-spec/0.3 document; emits a tm-spec `preflight` block. Hardened by a
+  game-theory + CS + information-theory consilium.
+- **Converters** — `from-inputs` (QE/ABACUS input → tm-spec/0.3) and tm-spec's
+  `import-nomad` (→ 0.3); `prodromos plan my.in` auto-converts a raw input. Zero manual
+  spec authoring to onboard.
+- **MCP server** — thin in-process stdio (`prodromos-mcp`); `plan` + `from_inputs` + one
+  tool per gate; no proxy/network/Docker.
 
-## Shipped
+## Next
+- **`plan` tree calibration from real campaign outcomes** (`update_from_outcomes`): the
+  Beta-Binomial table currently seeds from public methodological hit-rates only.
+- **HTTP/SSE transport + Docker** — only if a shared remote host is needed.
+- **Paper / Zenodo packaging** — CITATION.cff, Zenodo DOI, examples, CI, badges
+  (see the MagNEB_Preflight manuscript readiness gap-list).
 
-All previously open items are implemented, each with `cli_contract` envelope output,
-a `run_*` entry point, a `prodromos` subcommand, and unit tests (suite: 349 tests).
+## Shipped gates
+
+All gate items are implemented, each with `cli_contract` envelope output, a `run_*`
+entry point, a `prodromos` subcommand, and unit tests (suite: 448 tests).
 
 | Item | Gate / change | Subcommand |
 |------|---------------|------------|
