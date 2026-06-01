@@ -30,6 +30,7 @@ SUBCOMMANDS: dict[str, str] = {
     "external-reference": "prodromos.external_reference_gate",
     "lint-dft-script": "prodromos.lint_dft_script",
     "h-barrier-readiness": "prodromos.h_barrier_paper_readiness",
+    "plan": "prodromos.plan.cli",
 }
 
 

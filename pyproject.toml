@@ -41,6 +41,13 @@ dev = [
     "pytest-cov>=5.0",
     "ruff>=0.6",
 ]
+# The `plan` engine orchestrates the $0 gates over a tm-spec case document.
+# tm-spec is not on PyPI; install it editable from a sibling checkout
+# (`pip install -e ../tm-spec`). `pip install -e .` and `.[dev]` stay green
+# without tm-spec; only `plan` mode requires it.
+plan = [
+    "tm-spec",
+]
 
 [project.scripts]
 prodromos = "prodromos.__main__:main"
