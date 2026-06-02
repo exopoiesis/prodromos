@@ -60,6 +60,7 @@ entry point, a `prodromos` subcommand, and unit tests (full suite green).
 | N-16 | `import-mp` magnetic-depth importer (MP computed ordering + per-site magmoms → tm-spec `magnetic` block); MCP `import_mp` | tm-spec `import-mp` |
 | N-17 | structure-mode policy graph for bare SinglePoint/Relax corpus cases (parity → spin-collapse → nspin verdict); `select_policy_graph` by kind; `spin_collapse` adapter now reads `magnetic.magmoms_uB` | `plan` (structure mode) |
 | N-18 | `external-reference` NOMAD 422 self-heal: strips a non-doc-quantity `include` field named in the 422 body and retries (kills the recurring "flap"-masquerade-of-422) | `external-reference` |
+| N-19 | `import-magndata` experimental magnetic anchor (MAGNDATA magCIF → tm-spec `magnetic` block); FM/AFM/ferri derived rigorously from the file's magnetic symmetry ops (axial-vector projector), not a hardcoded table; MCP `import_magndata` | tm-spec `import-magndata` |
 
 ## Backlog (carried)
 

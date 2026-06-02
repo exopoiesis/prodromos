@@ -47,6 +47,7 @@ _EXPECTED_TOOLS = {
     "import_optimade",
     "import_nomad",
     "import_mp",
+    "import_magndata",
     "merge_specs",
 }
 
@@ -214,6 +215,39 @@ def test_import_mp_pure_transform_offline():
     doc = mpimp.summary_to_tm_spec(summary, {"magmoms": [0.0] * 12}, date="2026-06-02")
     assert doc["magnetic"]["state"] == "NM"
     assert doc["structure"]["geometry_origin"] == "dft_relaxed"
+
+
+def test_import_magndata_graceful_on_error(monkeypatch):
+    """import_magndata returns a well-formed error envelope (no crash) on failure."""
+    from tm_spec.importers import magndata as _mag
+
+    def boom(*a, **k):
+        raise _mag.MagndataError("simulated network failure")
+
+    monkeypatch.setattr(_mag, "fetch_to_tm_spec", boom)
+    env = mcp_server.tool_import_magndata(code="0.1")
+    assert env["tool"] == "import_magndata"
+    assert env["status"] == "error"
+    assert env["count"] == 0 and env["docs"] == []
+    assert isinstance(env["reasons"], list) and env["reasons"]
+
+
+def test_import_magndata_pure_transform_offline():
+    """Verify the magCIF -> tm-spec transform without network (synthetic FM cell)."""
+    from tm_spec.importers.magndata import magcif_to_tm_spec
+    mcif = (
+        "data_t\n_chemical_formula_sum 'Fe'\n_space_group_magn.name_BNS \"P1\"\n"
+        "_space_group_magn.point_group_name \"1\"\n_cell_angle_alpha 90.0\n"
+        "_cell_angle_beta 90.0\n_cell_angle_gamma 90.0\n"
+        "loop_\n_space_group_symop_magn_operation.id\n_space_group_symop_magn_operation.xyz\n"
+        "1 x,y,z,+1\n"
+        "loop_\n_atom_site_moment.label\n_atom_site_moment.crystalaxis_x\n"
+        "_atom_site_moment.crystalaxis_y\n_atom_site_moment.crystalaxis_z\n"
+        "Fe 3.0 0.0 0.0\n"
+    )
+    doc = magcif_to_tm_spec(mcif, code="t")
+    assert doc["magnetic"]["state"] == "FM"
+    assert doc["structure"]["geometry_origin"] == "experimental"
 
 
 def test_merge_specs_combines_depth_and_width():

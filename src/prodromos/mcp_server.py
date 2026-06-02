@@ -754,6 +754,59 @@ def tool_import_mp(
     }
 
 
+def tool_import_magndata(
+    code: str,
+    author: str = "import@magndata",
+) -> dict:
+    """Import a MAGNDATA EXPERIMENTAL magnetic structure into a tm-spec/0.3 doc.
+
+    MAGNDATA (Bilbao) is the experimental magnetic-structure database (magCIF / BNS
+    magnetic space groups) -- the experimental ground-truth anchor that complements
+    MP's COMPUTED magnetism (``import_mp``), which can disagree with experiment
+    (e.g. MP labels troilite/chalcopyrite FM where neutron diffraction finds AFM).
+    Fills the tm-spec ``magnetic`` block with state / collinear / magmoms_uB /
+    propagation_vector / bns_group and ``geometry_origin: experimental``. The
+    FM/AFM/ferri verdict is derived rigorously from the magnetic symmetry operations
+    in the file (net-moment projector), not a hardcoded table.
+
+    ``code`` is a MAGNDATA entry code (e.g. ``0.1`` / ``1.0.1`` / ``2.10``). The
+    Bilbao server has a misconfigured TLS cert; this fetches with verification
+    disabled (public reference data). Degrades softly on network/parse error.
+    """
+    from tm_spec.importers.magndata import MagndataError, fetch_to_tm_spec
+
+    try:
+        doc = fetch_to_tm_spec(code, author=author)
+    except MagndataError as exc:
+        return {
+            "tool": "import_magndata",
+            "status": "error",
+            "count": 0,
+            "docs": [],
+            "reasons": [f"MAGNDATA import failed: {exc}"],
+        }
+    except Exception as exc:  # never raise to the LLM
+        return {
+            "tool": "import_magndata",
+            "status": "error",
+            "count": 0,
+            "docs": [],
+            "reasons": [f"unexpected error importing MAGNDATA {code!r}: {exc}"],
+        }
+
+    return {
+        "tool": "import_magndata",
+        "status": "ok",
+        "count": 1,
+        "docs": [doc],
+        "reasons": [
+            f"imported MAGNDATA {code!r} (experimental); magnetic.state="
+            f"{(doc.get('magnetic') or {}).get('state')!r}, bns_group="
+            f"{(doc.get('magnetic') or {}).get('bns_group')!r}"
+        ],
+    }
+
+
 def tool_merge_specs(
     base: dict,
     overlay: dict,
@@ -837,6 +890,7 @@ _TOOLS: dict[str, Any] = {
     "import_optimade": tool_import_optimade,
     "import_nomad": tool_import_nomad,
     "import_mp": tool_import_mp,
+    "import_magndata": tool_import_magndata,
     "merge_specs": tool_merge_specs,
 }
 
