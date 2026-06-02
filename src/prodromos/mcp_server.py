@@ -63,14 +63,14 @@ def tool_plan(
     from prodromos.plan.cli import _load_and_validate
     from prodromos.plan.emit import to_envelope
     from prodromos.plan.interpret import walk
-    from prodromos.plan.policy import POLICY_GRAPH
+    from prodromos.plan.policy import select_policy_graph
 
     doc, err, extra_reasons = _load_and_validate(Path(case_path), code=code)
     if err is not None:
         return err
 
     result = walk(
-        POLICY_GRAPH,
+        select_policy_graph(doc),
         doc,
         mode=mode,
         budget_usd=budget_usd,
@@ -693,6 +693,67 @@ def tool_import_nomad(
     }
 
 
+def tool_import_mp(
+    material_id: str | None = None,
+    formula: str | None = None,
+    space_group: int | None = None,
+    author: str = "import@mp",
+) -> dict:
+    """Import Materials Project COMPUTED magnetism (the 'magnetic depth') into
+    tm-spec/0.3 doc(s).
+
+    MP carries the computed magnetic ground state OPTIMADE and NOMAD lack: ordering
+    (NM/FM/AFM/FiM), total_magnetization and per-site magmoms. This fills the tm-spec
+    ``magnetic`` block (state, collinear, magmoms_uB) -- the third leg paired with
+    ``import_optimade`` (structure width) and ``import_nomad`` (method depth) via
+    ``merge_specs``.
+
+    Provide ``material_id`` (exact, e.g. ``mp-226``) OR ``formula`` (e.g. ``FeS2``),
+    optionally narrowed to one ``space_group`` (most stable polymorph). Geometry is
+    MP-relaxed -> geometry_origin=dft_relaxed; AFM subtype is unspecified by MP
+    (mapped to AFM-G + surrogate_warning).
+
+    Auth: requires the ``MP_API_KEY`` env var (free MP key). Degrades softly: a
+    network / auth / HTTP error yields ``status`` + ``reasons`` instead of raising.
+    """
+    from tm_spec.importers.mp import MPError, fetch_to_tm_spec
+
+    try:
+        docs = fetch_to_tm_spec(
+            material_id=material_id,
+            formula=formula,
+            space_group=space_group,
+            author=author,
+        )
+    except MPError as exc:
+        return {
+            "tool": "import_mp",
+            "status": "error",
+            "count": 0,
+            "docs": [],
+            "reasons": [f"MP import failed: {exc}"],
+        }
+    except Exception as exc:  # never raise to the LLM
+        return {
+            "tool": "import_mp",
+            "status": "error",
+            "count": 0,
+            "docs": [],
+            "reasons": [f"unexpected error importing MP material: {exc}"],
+        }
+
+    return {
+        "tool": "import_mp",
+        "status": "ok",
+        "count": len(docs),
+        "docs": docs,
+        "reasons": [
+            f"imported {len(docs)} MP magnetic-depth doc(s) "
+            f"(magnetic.state filled from MP computed ground state)"
+        ],
+    }
+
+
 def tool_merge_specs(
     base: dict,
     overlay: dict,
@@ -775,6 +836,7 @@ _TOOLS: dict[str, Any] = {
     "magnetic_recommend": tool_magnetic_recommend,
     "import_optimade": tool_import_optimade,
     "import_nomad": tool_import_nomad,
+    "import_mp": tool_import_mp,
     "merge_specs": tool_merge_specs,
 }
 

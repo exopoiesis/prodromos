@@ -16,12 +16,22 @@ The framework is no longer a set of standalone gates — it is an orchestrated t
 - **Converters** — `from-inputs` (QE/ABACUS input → tm-spec/0.3) and tm-spec's
   `import-nomad` (→ 0.3); `prodromos plan my.in` auto-converts a raw input. Zero manual
   spec authoring to onboard.
+- **Corpus importers + merge** — tm-spec's `import-optimade` (structure *width*),
+  `import-nomad` (method *depth*), `import-mp` (computed magnetic *depth*: ordering +
+  per-site magmoms), folded locally with `merge_specs`. Exposed as MCP tools so a whole
+  validation corpus can be pulled and planned through the server.
+- **Two policy graphs, selected by case kind** — the NEB V_Fe+H pre-flight graph
+  (`endpoint_provenance → … → GO`) AND a **structure-mode triage graph** for bare
+  SinglePoint/Relax corpus cases (`electron_parity → spin_collapse → nspin recommendation`),
+  so a structure-only import resolves to a magnetic-readiness verdict instead of
+  `NEEDS_DATA(workflow.endpoints)`. `select_policy_graph(doc)` picks by kind/endpoints.
 - **MCP server** — thin in-process stdio (`prodromos-mcp`); `plan` + `from_inputs` + one
-  tool per gate; no proxy/network/Docker.
+  tool per gate + the three importers + `merge_specs`; no proxy/network/Docker.
 
 ## Next
 - **`plan` tree calibration from real campaign outcomes** (`update_from_outcomes`): the
-  Beta-Binomial table currently seeds from public methodological hit-rates only.
+  Beta-Binomial table currently seeds from public methodological hit-rates only — the
+  structure-mode graph now makes the NOMAD/OPTIMADE/MP corpus a calibration source.
 - **HTTP/SSE transport + Docker** — only if a shared remote host is needed.
 - **Paper / Zenodo packaging** — CITATION.cff, Zenodo DOI, examples, CI, badges
   (see the MagNEB_Preflight manuscript readiness gap-list).
@@ -29,7 +39,7 @@ The framework is no longer a set of standalone gates — it is an orchestrated t
 ## Shipped gates
 
 All gate items are implemented, each with `cli_contract` envelope output, a `run_*`
-entry point, a `prodromos` subcommand, and unit tests (suite: 448 tests).
+entry point, a `prodromos` subcommand, and unit tests (full suite green).
 
 | Item | Gate / change | Subcommand |
 |------|---------------|------------|
@@ -47,6 +57,9 @@ entry point, a `prodromos` subcommand, and unit tests (suite: 448 tests).
 | N-13 | `saddle_proximity_gate` extracted as a reusable tool | `saddle-proximity` |
 | N-14 | `(U, nspin, functional, ecut, kpts)` provenance guard; within-method-delta refuses cross-provenance comparison | `magnetic-parser` / `magnetic-recommend` |
 | N-15 | H-transfer paper-readiness gate (index-1 imaginary mode + ΔZPE‡) | `h-barrier-readiness` |
+| N-16 | `import-mp` magnetic-depth importer (MP computed ordering + per-site magmoms → tm-spec `magnetic` block); MCP `import_mp` | tm-spec `import-mp` |
+| N-17 | structure-mode policy graph for bare SinglePoint/Relax corpus cases (parity → spin-collapse → nspin verdict); `select_policy_graph` by kind; `spin_collapse` adapter now reads `magnetic.magmoms_uB` | `plan` (structure mode) |
+| N-18 | `external-reference` NOMAD 422 self-heal: strips a non-doc-quantity `include` field named in the 422 body and retries (kills the recurring "flap"-masquerade-of-422) | `external-reference` |
 
 ## Backlog (carried)
 

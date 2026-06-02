@@ -17,7 +17,7 @@ from pathlib import Path
 from prodromos.cli_contract import dump_json, response_envelope
 from prodromos.plan.emit import to_envelope, to_preflight_block
 from prodromos.plan.interpret import walk
-from prodromos.plan.policy import POLICY_GRAPH
+from prodromos.plan.policy import select_policy_graph
 
 TOOL = "plan"
 
@@ -175,7 +175,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     result = walk(
-        POLICY_GRAPH,
+        select_policy_graph(doc),
         doc,
         mode=args.mode,
         budget_usd=args.budget_usd,

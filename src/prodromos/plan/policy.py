@@ -156,3 +156,96 @@ def build_policy() -> PolicyGraph:
 
 # Module-level singleton (validated at import).
 POLICY_GRAPH = build_policy()
+
+
+def build_structure_policy() -> PolicyGraph:
+    """Structure-mode pre-flight graph for a bare SinglePoint/Relax case.
+
+    The NEB graph (``build_policy``) is rooted at endpoint_provenance and needs
+    ``workflow.endpoints`` -- so a structure-only corpus import (OPTIMADE width /
+    MP magnetic depth, no NEB band) always hit NEEDS_DATA there. This graph is the
+    structural+magnetic triage those cases CAN answer at $0: it decides the nspin
+    a production run should use from the electron-count parity and (if a moment is
+    carried in ``magnetic.magmoms_uB``) the spin-collapse magnitude.
+
+    Terminal verdicts stay in the canonical 4-set; the nspin recommendation is
+    carried in the terminal's ``what`` (next_action) and the gate trace:
+      * GO          -- magnetic ground state RESOLVED (run at the recommended nspin)
+      * INVESTIGATE -- electron count / valence ambiguous (parity REVIEW)
+      * NEEDS_DATA  -- moment needed to disambiguate (emitted by the spin-collapse
+                       adapter when no magmoms / state are present)
+    """
+    nodes: dict[str, Node] = {}
+
+    def add(node: Node) -> None:
+        nodes[node.id] = node
+
+    add(Node(
+        id="s_electron_parity",
+        kind="gate",
+        gate="electron-parity",
+        inputs=["symbol_counts", "charge", "metallic", "smearing"],
+        what="does electron-count parity / open-shell TM indicate spin polarisation?",
+        edges=(
+            Edge("s_spin_collapse",
+                 verdict_in("NSPIN2_MANDATORY", "NSPIN2_RECOMMENDED"),
+                 label="spin polarisation indicated -> check the moment magnitude"),
+            Edge("s_nspin1_closed_shell", verdict_in("NSPIN1_OK"),
+                 label="closed shell, no open-shell TM -> non-magnetic, nspin=1"),
+            Edge("s_parity_review", verdict_in("REVIEW"),
+                 label="cannot determine parity/valence -> investigate"),
+        ),
+    ))
+    add(Node(
+        id="s_spin_collapse",
+        kind="gate",
+        gate="spin-collapse",
+        inputs=["mabs_per_tm", "mabs", "n_tm"],
+        what="does the local TM moment collapse (nspin=1 ok) or persist (nspin=2)?",
+        edges=(
+            Edge("s_nspin1_collapsed", verdict_in("NSPIN1_OK"),
+                 label="moment collapsed -> nspin=1 production"),
+            Edge("s_nspin2_magnetic", verdict_in("NSPIN2_REQUIRED"),
+                 label="moment persists -> nspin=2 production"),
+        ),
+    ))
+    add(Node(
+        id="s_nspin1_closed_shell", kind="terminal", terminal="GO",
+        what="closed-shell (no open-shell TM): non-magnetic ground state; run nspin=1 production",
+    ))
+    add(Node(
+        id="s_nspin1_collapsed", kind="terminal", terminal="GO",
+        what="open-shell TM but local moment collapsed to ~0: run nspin=1 (restricted) production",
+    ))
+    add(Node(
+        id="s_nspin2_magnetic", kind="terminal", terminal="GO",
+        what="local moment persists: run nspin=2 (spin-polarised) production with starting_magnetization",
+    ))
+    add(Node(
+        id="s_parity_review", kind="terminal", terminal="INVESTIGATE",
+        what="electron count / valence is ambiguous; resolve before committing compute",
+    ))
+
+    graph = PolicyGraph(nodes=nodes, root="s_electron_parity")
+    assert_dag(graph)
+    return graph
+
+
+STRUCTURE_POLICY_GRAPH = build_structure_policy()
+
+# Kinds that carry no NEB band -> use the structure-mode triage graph.
+_STRUCTURE_KINDS = frozenset({"SinglePointCalculation", "RelaxCalculation"})
+
+
+def select_policy_graph(doc: dict) -> PolicyGraph:
+    """Pick the policy graph for a tm-spec ``doc``.
+
+    A SinglePoint/Relax case with no ``workflow.endpoints`` is a bare structure
+    (e.g. an OPTIMADE/MP/NOMAD corpus import) -> the structure-mode triage graph.
+    Anything carrying NEB endpoints (or a NEB/MD kind) -> the NEB pre-flight graph.
+    """
+    kind = doc.get("kind")
+    endpoints = ((doc.get("workflow") or {}).get("endpoints")) or {}
+    if kind in _STRUCTURE_KINDS and not endpoints:
+        return STRUCTURE_POLICY_GRAPH
+    return POLICY_GRAPH

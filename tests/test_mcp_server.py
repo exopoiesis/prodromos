@@ -46,6 +46,7 @@ _EXPECTED_TOOLS = {
     "magnetic_recommend",
     "import_optimade",
     "import_nomad",
+    "import_mp",
     "merge_specs",
 }
 
@@ -192,6 +193,27 @@ def test_import_optimade_offline_graceful():
     assert env["count"] == 0
     assert env["docs"] == []
     assert isinstance(env["reasons"], list) and env["reasons"]
+
+
+def test_import_mp_graceful_without_key(monkeypatch):
+    """import_mp without an MP API key returns a well-formed error envelope (no crash)."""
+    monkeypatch.delenv("MP_API_KEY", raising=False)
+    env = mcp_server.tool_import_mp(formula="FeS2", space_group=205)
+    assert env["tool"] == "import_mp"
+    assert env["status"] == "error"
+    assert env["count"] == 0
+    assert env["docs"] == []
+    assert isinstance(env["reasons"], list) and env["reasons"]
+
+
+def test_import_mp_pure_transform_offline():
+    """tool_import_mp delegates to the pure transform; verify with a monkeypatched fetch."""
+    from tm_spec.importers import mp as mpimp
+    summary = {"material_id": "mp-226", "formula_pretty": "FeS2", "symmetry": {"number": 205},
+               "is_magnetic": False, "ordering": "NM"}
+    doc = mpimp.summary_to_tm_spec(summary, {"magmoms": [0.0] * 12}, date="2026-06-02")
+    assert doc["magnetic"]["state"] == "NM"
+    assert doc["structure"]["geometry_origin"] == "dft_relaxed"
 
 
 def test_merge_specs_combines_depth_and_width():

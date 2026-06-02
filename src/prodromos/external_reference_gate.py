@@ -191,6 +191,21 @@ def _parse_optimade_response(data: dict) -> dict:
     }
 
 
+def _bad_doc_quantities(resp_json: dict) -> list[str]:
+    """Extract field names NOMAD rejected as non-doc-quantities from a 422 body.
+
+    NOMAD 422 shape: ``{"detail":[{"msg":"<field> is not a doc quantity", ...}]}``.
+    Returns the offending field names (e.g. ``results.properties.magnetic.magnetic_ordering``).
+    """
+    bad: list[str] = []
+    for item in (resp_json.get("detail") or []):
+        msg = item.get("msg", "") if isinstance(item, dict) else ""
+        marker = " is not a doc quantity"
+        if marker in msg:
+            bad.append(msg.split(marker)[0].strip())
+    return bad
+
+
 def _query_nomad(
     elements: list[str],
     reduced_formula: str | None,
@@ -200,30 +215,50 @@ def _query_nomad(
 ) -> dict | None:
     """POST to NOMAD.  Returns parsed dict or None on failure.
 
-    On failure the *actual* error (HTTP status + body for a 422, or the
-    exception text otherwise) is appended to ``errors`` if provided, so the
-    caller can surface an honest warning instead of a blanket "network error
-    or timeout" (a 422 invalid-doc-quantity bug masqueraded as a network flap
-    for months -- see _build_nomad_query).
+    SELF-HEALS the recurring 422 trap: if NOMAD rejects an ``include`` field as
+    "not a doc quantity" (lattice_parameters / magnetic_ordering / ... are NOT
+    searchable -- they live only in the per-entry archive), the offending field
+    is stripped and the query retried, with a warning, rather than silently
+    degrading to OPTIMADE while logging a misleading "network error or timeout"
+    (the bug that masqueraded as a NOMAD flap for months). Other failures append
+    the *actual* error to ``errors``.
     """
-    try:
-        body = _build_nomad_query(elements, reduced_formula)
-        resp = client.post(_NOMAD_ENTRIES_URL, json=body, timeout=timeout)
-        resp.raise_for_status()
-        return _parse_nomad_response(resp.json())
-    except httpx.HTTPStatusError as exc:
-        if errors is not None:
-            detail = ""
-            try:
-                detail = f": {exc.response.text[:200]}"
-            except Exception:
-                pass
-            errors.append(f"NOMAD query HTTP {exc.response.status_code}{detail}")
-        return None
-    except Exception as exc:  # network / timeout / parse
-        if errors is not None:
-            errors.append(f"NOMAD query failed ({type(exc).__name__}: {exc})")
-        return None
+    body = _build_nomad_query(elements, reduced_formula)
+    for _ in range(len(body.get("required", {}).get("include", [])) + 1):
+        try:
+            resp = client.post(_NOMAD_ENTRIES_URL, json=body, timeout=timeout)
+            resp.raise_for_status()
+            return _parse_nomad_response(resp.json())
+        except httpx.HTTPStatusError as exc:
+            status = exc.response.status_code
+            if status == 422:
+                try:
+                    bad = _bad_doc_quantities(exc.response.json())
+                except Exception:
+                    bad = []
+                include = body.get("required", {}).get("include", [])
+                stripped = [f for f in bad if f in include]
+                if stripped:
+                    body["required"]["include"] = [f for f in include if f not in stripped]
+                    if errors is not None:
+                        errors.append(
+                            "NOMAD: dropped non-doc-quantity include field(s) "
+                            f"{stripped} and retried (these live only in the archive)"
+                        )
+                    continue  # retry with the bad field removed
+            if errors is not None:
+                detail = ""
+                try:
+                    detail = f": {exc.response.text[:200]}"
+                except Exception:
+                    pass
+                errors.append(f"NOMAD query HTTP {status}{detail}")
+            return None
+        except Exception as exc:  # network / timeout / parse
+            if errors is not None:
+                errors.append(f"NOMAD query failed ({type(exc).__name__}: {exc})")
+            return None
+    return None
 
 
 def _query_optimade(

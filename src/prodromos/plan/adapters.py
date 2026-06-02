@@ -193,9 +193,28 @@ def _needs_dft_output(gate: str, artefact: str) -> NeedsData:
 
 
 def to_spin_collapse_inputs(doc: dict) -> dict | NeedsData:
-    """G02: needs a cheap nspin=2 single-point's magnetization (post-pilot)."""
+    """G02: decide nspin from the local-moment magnitude.
+
+    Uses a QUANTITATIVE magnetization carried by ``magnetic.magmoms_uB`` (e.g. an
+    MP import: computed per-site moments): mabs = sum|m|, n_tm = count(|m| > 0.3),
+    and the gate's mabs_per_tm test decides collapse (nspin=1) vs persist (nspin=2).
+
+    A bare ``magnetic.state`` label (e.g. a hand-asserted ``NM`` with empty
+    magmoms) is NOT trusted to short-circuit the moment check -- a declared NM is
+    an assumption, not a measurement, and is exactly what an odd-electron system
+    can violate. With no per-site moments we ask for the cheap nspin=2 single-point.
+    """
+    mag = doc.get("magnetic") or {}
+    magmoms = mag.get("magmoms_uB")
+    if isinstance(magmoms, dict) and magmoms:
+        vals = [abs(float(v)) for v in magmoms.values() if isinstance(v, (int, float))]
+        if vals:
+            mabs = sum(vals)
+            n_tm = sum(1 for v in vals if v > 0.3)
+            return {"mabs_per_tm": (mabs / n_tm) if n_tm else 0.0,
+                    "mabs": mabs, "n_tm": n_tm}
     return _needs_dft_output(
-        "spin-collapse", "an nspin=2 single-point magnetization (mabs + n_tm)"
+        "spin-collapse", "an nspin=2 single-point magnetization (magnetic.magmoms_uB or mabs + n_tm)"
     )
 
 

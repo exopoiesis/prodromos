@@ -101,6 +101,42 @@ def _mock_httpx_client(nomad_data=None, optimade_data=None,
 # Tests: live=False (offline mode)
 # ---------------------------------------------------------------------------
 
+def test_nomad_422_doc_quantity_self_heals():
+    """A 422 'X is not a doc quantity' strips field X from include and retries
+    (rather than silently degrading to OPTIMADE with a misleading network warning)."""
+    import httpx
+    from prodromos.external_reference_gate import _query_nomad, _bad_doc_quantities
+
+    bad_field = "results.material.symmetry.crystal_system"  # present in the current include
+    # First POST: 422 naming the bad doc-quantity.
+    resp_422 = MagicMock()
+    resp_422.status_code = 422
+    resp_422.json.return_value = {"detail": [{"msg": f"{bad_field} is not a doc quantity",
+                                              "loc": [["required"]]}]}
+    resp_422.text = "422 unprocessable"
+    resp_422.raise_for_status.side_effect = httpx.HTTPStatusError(
+        "422", request=MagicMock(), response=resp_422)
+    # Second POST (after strip): 200 with real hits.
+    resp_ok = MagicMock()
+    resp_ok.raise_for_status = MagicMock()
+    resp_ok.json.return_value = _make_nomad_response(7)
+
+    client = MagicMock()
+    client.post.side_effect = [resp_422, resp_ok]
+
+    errors: list[str] = []
+    parsed = _query_nomad(["Fe", "S"], "FeS2", 10.0, client, errors)
+
+    assert parsed is not None and parsed["source"] == "nomad"
+    assert parsed["n_entries"] >= 7
+    assert client.post.call_count == 2  # retried once after stripping
+    assert any(bad_field in e and "dropped" in e for e in errors)
+    # the offending field was removed from the retried include
+    retried_body = client.post.call_args_list[1].kwargs["json"]
+    assert bad_field not in retried_body["required"]["include"]
+    assert _bad_doc_quantities(resp_422.json.return_value) == [bad_field]
+
+
 def test_offline_mode_returns_unknown():
     env = run_external_reference_gate(["Fe", "S"], live=False)
     assert env["verdict"] == "UNKNOWN"
