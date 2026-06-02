@@ -65,13 +65,20 @@ def _build_nomad_query(
         "query": query,
         "pagination": {"page_size": _NOMAD_PAGE_SIZE},
         "required": {
+            # ONLY searchable "doc quantities" may appear here. NOMAD rejects the
+            # whole query with HTTP 422 ("... is not a doc quantity") if any field
+            # is not indexed -- so lattice_parameters and magnetic_ordering CANNOT
+            # be requested via search; they live only in the per-entry archive
+            # (fetch with get_archive). Requesting them was a latent bug that made
+            # every NOMAD call 422 and silently fall back to OPTIMADE while logging
+            # a misleading "network error or timeout". See nomad_client.py.
             "include": [
                 "entry_id",
                 "results.material.chemical_formula_reduced",
                 "results.material.elements",
+                "results.material.symmetry.crystal_system",
+                "results.material.symmetry.space_group_number",
                 "results.method.simulation.dft.xc_functional_type",
-                "results.properties.structures.structure_original.lattice_parameters",
-                "results.properties.magnetic.magnetic_ordering",
             ]
         },
     }
@@ -189,14 +196,33 @@ def _query_nomad(
     reduced_formula: str | None,
     timeout: float,
     client,
+    errors: list[str] | None = None,
 ) -> dict | None:
-    """POST to NOMAD.  Returns parsed dict or None on failure."""
+    """POST to NOMAD.  Returns parsed dict or None on failure.
+
+    On failure the *actual* error (HTTP status + body for a 422, or the
+    exception text otherwise) is appended to ``errors`` if provided, so the
+    caller can surface an honest warning instead of a blanket "network error
+    or timeout" (a 422 invalid-doc-quantity bug masqueraded as a network flap
+    for months -- see _build_nomad_query).
+    """
     try:
         body = _build_nomad_query(elements, reduced_formula)
         resp = client.post(_NOMAD_ENTRIES_URL, json=body, timeout=timeout)
         resp.raise_for_status()
         return _parse_nomad_response(resp.json())
-    except Exception:
+    except httpx.HTTPStatusError as exc:
+        if errors is not None:
+            detail = ""
+            try:
+                detail = f": {exc.response.text[:200]}"
+            except Exception:
+                pass
+            errors.append(f"NOMAD query HTTP {exc.response.status_code}{detail}")
+        return None
+    except Exception as exc:  # network / timeout / parse
+        if errors is not None:
+            errors.append(f"NOMAD query failed ({type(exc).__name__}: {exc})")
         return None
 
 
@@ -281,9 +307,8 @@ def run_external_reference_gate(
     query_errors: list[str] = []
 
     with httpx.Client() as client:
-        parsed = _query_nomad(elements, reduced_formula, timeout, client)
+        parsed = _query_nomad(elements, reduced_formula, timeout, client, query_errors)
         if parsed is None:
-            query_errors.append("NOMAD query failed (network error or timeout)")
             parsed = _query_optimade(elements, reduced_formula, timeout, client)
             if parsed is None:
                 query_errors.append("OPTIMADE fallback also failed")
