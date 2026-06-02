@@ -72,6 +72,13 @@ class LeafEconomics:
     v_fail: float = 0.0           # deadweight; a failed run yields no science
     cost_run: float = 200.0
     cost_redo: float = 200.0
+    # est_frac: of the NON-paper-grade runs (1 - p_success), the fraction that still
+    # converge to a usable electronic-only ESTIMATE (v_estimate) rather than a hard
+    # failure (v_fail). 0.0 reproduces the legacy binary {paper, fail} leaf exactly
+    # (backward compatible); >0 upgrades part of the failure mass to the estimate
+    # outcome (consilium 2026-06-02: a binary leaf over-penalises a converged-but-
+    # coarse NEB as a full failure). Stage-3 calibration sets it per chemistry family.
+    est_frac: float = 0.0
 
 
 # Per-method economics: cheaper / safer methods cost less and (generically) have

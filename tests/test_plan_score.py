@@ -26,6 +26,38 @@ def _stop_leaf():
 
 
 # --------------------------------------------------------------------------
+# 3-outcome leaf (consilium 2026-06-02): paper / estimate / fail, est_frac
+# --------------------------------------------------------------------------
+def test_est_frac_zero_reduces_to_binary_leaf():
+    """est_frac=0 (default) must reproduce the legacy binary {paper, fail} EV exactly."""
+    from prodromos.plan.score import expected_utility, leaf_utility_points
+    leaf0 = _run_leaf(0.5, v_estimate=400.0, est_frac=0.0)
+    pts = leaf_utility_points(leaf0)
+    # the estimate point carries zero probability
+    assert any(prob == 0.0 for prob, _ in pts)
+    # EV == binary: 0.5*(1000-200) + 0.5*(0-400) = 400 - 200 = 200
+    assert math.isclose(expected_utility(leaf0), 200.0)
+
+
+def test_est_frac_upgrades_failure_mass_raising_utility():
+    """est_frac>0 moves part of the failure mass to a usable estimate -> higher EV
+    (a converged-but-coarse NEB is no longer scored as a full failure)."""
+    from prodromos.plan.score import expected_utility
+    binary = _run_leaf(0.5, v_estimate=400.0, est_frac=0.0)
+    three = _run_leaf(0.5, v_estimate=400.0, est_frac=0.5)
+    # binary EV = 200; with est_frac=0.5 half of the 0.5 failure mass becomes estimate:
+    #   0.5*(1000-200) + 0.25*(400-200) + 0.25*(0-400) = 400 + 50 - 100 = 350
+    assert math.isclose(expected_utility(three), 350.0)
+    assert expected_utility(three) > expected_utility(binary)
+
+
+def test_est_frac_probabilities_sum_to_one():
+    from prodromos.plan.score import leaf_utility_points
+    pts = leaf_utility_points(_run_leaf(0.4, v_estimate=400.0, est_frac=0.3))
+    assert math.isclose(sum(p for p, _ in pts), 1.0)
+
+
+# --------------------------------------------------------------------------
 # chance node = expectation
 # --------------------------------------------------------------------------
 def test_chance_node_is_expectation():

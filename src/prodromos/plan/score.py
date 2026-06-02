@@ -48,10 +48,12 @@ class PlanNode:
     # TERMINAL (leaf):
     is_stop: bool = False                 # STOP / NO-GO leaf -> reference U = 0
     p_success: float = 0.0                # calibrated lower bound (C5)
-    v_paper: float = 0.0                  # monetised paper value of a success
+    v_paper: float = 0.0                  # monetised paper value of a paper-grade success
+    v_estimate: float = 0.0               # value of a converged-but-coarse electronic-only estimate
     v_fail: float = 0.0                   # value of a failed run's deliverable (usually <= 0)
     cost_run: float = 0.0                 # cost actually incurred to run
     cost_redo: float = 0.0                # extra cost to redo after a failure
+    est_frac: float = 0.0                 # fraction of non-paper-grade runs yielding a usable estimate
     paper_grade_reachable: bool = False
     method: str = ""
     proposed_workflow_ref: str | None = None
@@ -63,19 +65,30 @@ class PlanNode:
 # leaf utility distribution + CVaR
 # --------------------------------------------------------------------------
 def leaf_utility_points(node: PlanNode) -> list[tuple[float, float]]:
-    """Return the 2-point (probability, utility) distribution of a run leaf.
+    """Return the (probability, utility) distribution of a run leaf.
 
-    success: utility = V_paper - cost_run         with prob p_success
-    failure: utility = v_fail  - (cost_run+cost_redo) with prob (1 - p_success)
+    Three outcomes (consilium 2026-06-02):
+      paper-grade: utility = v_paper   - cost_run                   p = p_success
+      estimate:    utility = v_estimate- cost_run                   p = (1-p_success)*est_frac
+      failure:     utility = v_fail    - (cost_run+cost_redo)       p = (1-p_success)*(1-est_frac)
+
+    ``est_frac`` is the fraction of NON-paper-grade runs that still converge to a usable
+    electronic-only estimate rather than a hard failure. With ``est_frac=0`` (default) the
+    estimate point has zero probability and this reduces EXACTLY to the legacy binary
+    {paper, fail} leaf (backward compatible).
 
     A STOP leaf is the degenerate distribution {(1.0, 0.0)} -- the reference.
     """
     if node.is_stop:
         return [(1.0, 0.0)]
     p = max(0.0, min(1.0, node.p_success))
-    u_succ = node.v_paper - node.cost_run
+    ef = max(0.0, min(1.0, node.est_frac))
+    p_est = (1.0 - p) * ef
+    p_fail = (1.0 - p) * (1.0 - ef)
+    u_paper = node.v_paper - node.cost_run
+    u_est = node.v_estimate - node.cost_run
     u_fail = node.v_fail - (node.cost_run + node.cost_redo)
-    return [(p, u_succ), (1.0 - p, u_fail)]
+    return [(p, u_paper), (p_est, u_est), (p_fail, u_fail)]
 
 
 def expected_cost(node: PlanNode) -> float:
