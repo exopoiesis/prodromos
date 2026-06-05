@@ -18,6 +18,7 @@ authors:
     orcid: "https://orcid.org/0009-0007-3863-1747"
 version: "0.1.0"
 date-released: "2026-06-05"
+doi: "10.5281/zenodo.20560384"
 license: MIT
 license-url: "https://github.com/exopoiesis/prodromos/blob/main/LICENSE"
 repository-code: "https://github.com/exopoiesis/prodromos"
