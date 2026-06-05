@@ -1,0 +1,42 @@
+cff-version: 1.2.0
+message: "If you use Prodromos in academic work, please cite it using the metadata below."
+title: "Prodromos: magnetic-first pre-flight gates for well-posed DFT NEB"
+abstract: >
+  Prodromos is a zero-cost pre-flight / post-flight diagnostic gate framework for
+  expensive DFT nudged-elastic-band (NEB) and saddle-point searches in magnetic
+  transition-metal systems. It runs ahead of the costly calculation and reports
+  whether the migration path is well-posed on a single spin sheet — catching
+  endpoint-topology, structural-motif, electron-parity, and magnetic spin-sheet
+  failure modes (GO / REVIEW / NO-GO_SINGLE_SHEET routing verdicts) before GPU
+  time is spent. It emits machine-readable tm-spec records and ships an MCP server.
+type: software
+authors:
+  - family-names: "Morozov"
+    given-names: "Igor"
+    email: "igor@exopoiesis.space"
+    affiliation: "Independent Researcher, Ukraine"
+    orcid: "https://orcid.org/0009-0007-3863-1747"
+version: "0.1.0"
+date-released: "2026-06-05"
+license: MIT
+license-url: "https://github.com/exopoiesis/prodromos/blob/main/LICENSE"
+repository-code: "https://github.com/exopoiesis/prodromos"
+keywords:
+  - DFT
+  - NEB
+  - nudged elastic band
+  - saddle point
+  - minimum energy path
+  - transition-metal sulfides
+  - magnetism
+  - spin sheet
+  - pre-flight
+  - reproducibility
+  - AI4Science
+references:
+  - type: software
+    title: "TM-Spec: a declarative YAML metalanguage for reproducible atomistic calculations"
+    url: "https://github.com/exopoiesis/tm-spec"
+  - type: software
+    title: "Citation File Format"
+    url: "https://citation-file-format.github.io"

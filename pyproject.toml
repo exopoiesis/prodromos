@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Prodromos — a $0 pre-flight/post-flight diagnostic gate that predicts whether an expensive DFT NEB / saddle search on Fe-S minerals will converge, before spending it on an A100."
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "Proprietary (Third Matter internal)" }
+license = { text = "MIT" }
 authors = [
     { name = "Igor Morozov", email = "igor@exopoiesis.space" },
 ]
@@ -12,7 +12,7 @@ keywords = ["dft", "neb", "transition-state", "saddle-point", "minimum-energy-pa
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
-    "License :: Other/Proprietary License",
+    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
