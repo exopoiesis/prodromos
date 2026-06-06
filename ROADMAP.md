@@ -71,6 +71,8 @@ entry point, a `prodromos` subcommand, and unit tests (full suite green).
 | N-23 | `magnetic_verdict` — per-TM *relative* endpoint ΔM threshold (no false NO-GO on slow drift) + auto-reconcile endpoint screen with the band-gate arbiter into one verdict | MCP `magnetic_verdict` / `magnetic_endpoint(n_magnetic=...)` |
 | N-24 | `magnetic_provenance` — MP-computed vs MAGNDATA-experimental ordering cross-check → route seed to experiment, WARN on conflict | MCP `magnetic_provenance` |
 | N-25 | band-directory discovery recognises `endA`/`endB`/`neb_imgNN` (not just `image_NN`) and orders endpoint→interior→endpoint (correct adjacency) | `magnetic-band` |
+| N-26 | `mic_alignment` — first-class pre-flight path-sanity gate: flags endpoints not in the same minimum-image cell and returns/writes an MIC-aligned endpoint B | MCP `mic_alignment` / `mic-alignment` |
+| N-27 | `import_magndata` search by `elements`/`formula` (promoted `search_codes` POST + reduced-formula filter into `tm_spec.importers.magndata`) | tm-spec `import-magndata --elements/--formula` |
 | meta | `batch` (many gates, one round-trip) + `preflight_bundle` (all $0 gates for a case) — collapse MCP client fan-out | MCP `batch` / `preflight_bundle` |
 
 ## Backlog (carried)

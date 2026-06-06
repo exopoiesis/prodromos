@@ -36,6 +36,7 @@ _EXPECTED_TOOLS = {
     "neb_advisor",
     "saddle_proximity",
     "multi_endpoint",
+    "mic_alignment",
     "mlip_confidence",
     "sublattice_preflight",
     "soap_cluster",
@@ -236,6 +237,46 @@ def test_import_magndata_graceful_on_error(monkeypatch):
     assert env["status"] == "error"
     assert env["count"] == 0 and env["docs"] == []
     assert isinstance(env["reasons"], list) and env["reasons"]
+
+
+def test_import_magndata_search_branch_by_formula(monkeypatch):
+    """tool_import_magndata(formula=...) routes to the search path (N-27)."""
+    from tm_spec.importers import magndata as _mag
+
+    fake_docs = [
+        {"magnetic": {"state": "AFM-G"}, "structure": {"formula": "FeS"}},
+        {"magnetic": {"state": "AFM-G"}, "structure": {"formula": "FeS"}},
+    ]
+    monkeypatch.setattr(_mag, "search_to_tm_spec", lambda **kw: fake_docs)
+    env = mcp_server.tool_import_magndata(formula="FeS")
+    assert env["tool"] == "import_magndata"
+    assert env["status"] == "ok"
+    assert env["count"] == 2
+    assert env["docs"] == fake_docs
+
+
+def test_import_magndata_requires_code_or_search():
+    """No code and no elements/formula -> a clean error envelope, not a crash."""
+    env = mcp_server.tool_import_magndata()
+    assert env["status"] == "error"
+    assert env["count"] == 0
+
+
+def test_mic_alignment_wrapper_reads_paths(tmp_path):
+    """tool_mic_alignment reads two structure files and flags a PBC crossing (N-26)."""
+    from ase import Atoms
+    from ase.io import write as ase_write
+
+    cell = [[10.0, 0, 0], [0, 10.0, 0], [0, 0, 10.0]]
+    a = Atoms("Fe2", scaled_positions=[(0.95, 0.5, 0.5), (0.5, 0.5, 0.5)], cell=cell, pbc=True)
+    b = Atoms("Fe2", scaled_positions=[(0.05, 0.5, 0.5), (0.5, 0.5, 0.5)], cell=cell, pbc=True)
+    pa, pb = tmp_path / "a.xyz", tmp_path / "b.xyz"
+    ase_write(str(pa), a)
+    ase_write(str(pb), b)
+    env = mcp_server.tool_mic_alignment(str(pa), str(pb))
+    assert env["tool"] == "mic_alignment_gate"
+    assert env["verdict"] == "NEEDS_MIC_ALIGNMENT"
+    assert env["result"]["n_crossing"] == 1
 
 
 def test_import_magndata_pure_transform_offline():

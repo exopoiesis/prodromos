@@ -23,6 +23,7 @@ SUBCOMMANDS: dict[str, str] = {
     "magnetic-recommend": "prodromos.magnetic_recommendation",
     "magnetic-provenance": "prodromos.magnetic_provenance",
     "mlip-confidence": "prodromos.mlip_confidence_gate",
+    "mic-alignment": "prodromos.mic_alignment_gate",
     "sublattice-preflight": "prodromos.sublattice_preflight",
     "multi-endpoint": "prodromos.multi_endpoint_enumeration",
     "soap-cluster": "prodromos.soap_cluster_minima",

@@ -403,6 +403,32 @@ def tool_soap_cluster(
     return run_soap_clustering(relaxed_dir, summary_json, threshold=threshold)
 
 
+def tool_mic_alignment(
+    endpoint_a_path: str,
+    endpoint_b_path: str,
+    write_aligned: str | None = None,
+    cross_threshold: float = 0.5,
+) -> dict:
+    """Pre-flight path-sanity gate: are two NEB endpoints in the same periodic image?
+
+    Reads endpoint A and B (any ASE-readable format) and flags atoms that cross a
+    periodic boundary between them (a naive interpolation would route them the long
+    way across the cell -> meaningless barrier). ALIGNED vs NEEDS_MIC_ALIGNMENT; on
+    the latter the result carries the minimum-image-aligned endpoint-B scaled
+    positions (and writes the aligned B to ``write_aligned`` if given).
+    """
+    from ase.io import read
+
+    from prodromos.mic_alignment_gate import run_mic_alignment
+
+    return run_mic_alignment(
+        read(endpoint_a_path),
+        read(endpoint_b_path),
+        cross_threshold=cross_threshold,
+        write_aligned=write_aligned,
+    )
+
+
 def tool_mlip_confidence(
     symbol_counts: dict[str, int],
     charge: float = 0.0,
@@ -946,10 +972,13 @@ def tool_import_mp(
 
 
 def tool_import_magndata(
-    code: str,
+    code: str | None = None,
+    elements: list[str] | None = None,
+    formula: str | None = None,
+    max_results: int = 10,
     author: str = "import@magndata",
 ) -> dict:
-    """Import a MAGNDATA EXPERIMENTAL magnetic structure into a tm-spec/0.3 doc.
+    """Import MAGNDATA EXPERIMENTAL magnetic structure(s) into tm-spec/0.3 doc(s).
 
     MAGNDATA (Bilbao) is the experimental magnetic-structure database (magCIF / BNS
     magnetic space groups) -- the experimental ground-truth anchor that complements
@@ -960,13 +989,36 @@ def tool_import_magndata(
     FM/AFM/ferri verdict is derived rigorously from the magnetic symmetry operations
     in the file (net-moment projector), not a hardcoded table.
 
-    ``code`` is a MAGNDATA entry code (e.g. ``0.1`` / ``1.0.1`` / ``2.10``). The
+    Provide EITHER ``code`` (a single MAGNDATA entry code, e.g. ``0.1`` / ``1.0.1`` /
+    ``2.10``) OR a SEARCH: ``elements`` (e.g. ``["Fe", "S"]``, element-AND) or
+    ``formula`` (e.g. ``"FeS"``, whose element set is searched and whose reduced
+    formula filters the matches). Search fetches up to ``max_results`` entries. The
     Bilbao server has a misconfigured TLS cert; this fetches with verification
     disabled (public reference data). Degrades softly on network/parse error.
     """
-    from tm_spec.importers.magndata import MagndataError, fetch_to_tm_spec
+    from tm_spec.importers.magndata import (
+        MagndataError,
+        fetch_to_tm_spec,
+        search_to_tm_spec,
+    )
 
     try:
+        if elements or formula:
+            docs = search_to_tm_spec(
+                elements=elements, formula=formula, max_results=max_results, author=author
+            )
+            query = f"elements={elements}" if elements else f"formula={formula!r}"
+            if not docs:
+                return {"tool": "import_magndata", "status": "ok", "count": 0, "docs": [],
+                        "reasons": [f"no MAGNDATA entries matched ({query})"]}
+            return {
+                "tool": "import_magndata", "status": "ok", "count": len(docs), "docs": docs,
+                "reasons": [f"imported {len(docs)} MAGNDATA experimental doc(s) matching {query}; "
+                            f"states={[(d.get('magnetic') or {}).get('state') for d in docs]}"],
+            }
+        if not code:
+            return {"tool": "import_magndata", "status": "error", "count": 0, "docs": [],
+                    "reasons": ["provide a code, or elements / formula to search"]}
         doc = fetch_to_tm_spec(code, author=author)
     except MagndataError as exc:
         return {
@@ -1147,6 +1199,7 @@ _GATE_TOOLS: dict[str, Any] = {
     "neb_advisor": tool_neb_advisor,
     "saddle_proximity": tool_saddle_proximity,
     "multi_endpoint": tool_multi_endpoint,
+    "mic_alignment": tool_mic_alignment,
     "mlip_confidence": tool_mlip_confidence,
     "sublattice_preflight": tool_sublattice_preflight,
     "soap_cluster": tool_soap_cluster,

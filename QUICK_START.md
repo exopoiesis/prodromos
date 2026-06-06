@@ -9,7 +9,7 @@ than the next — **stop as soon as a hard diagnosis is found.**
 ```bash
 python -m venv .venv
 .venv/Scripts/python.exe -m pip install -e ".[dev]"   # Windows
-.venv/Scripts/python.exe -m pytest -q                  # expect: 519 passed
+.venv/Scripts/python.exe -m pytest -q                  # expect: 529 passed
 ```
 
 All gates run either as `prodromos <subcommand> ...` (installed console script) or
@@ -64,7 +64,11 @@ prodromos spin-collapse ...    # NSPIN1_OK (moment collapses) vs NSPIN2_REQUIRED
 prodromos symmetry-preflight <relaxed_endpoint> ...   # SYMMETRIC / MARGINAL / ASYMMETRIC
 prodromos vfe-preflight ...                            # V_Fe pre-flight checklist gate
 prodromos endpoint-provenance --provenance mlip_relaxed ...   # is this a valid endpoint?
+prodromos mic-alignment endA.xyz endB.xyz --write-aligned endB_aligned.xyz   # PBC path-sanity
 ```
+`mic-alignment` checks the two endpoints are in the same minimum-image cell: if any atom
+crosses a periodic boundary between A and B, a naive interpolation routes it the long way
+across the cell (meaningless barrier). On `NEEDS_MIC_ALIGNMENT` it writes an aligned endpoint B.
 L1 (Hungarian test on the relaxed endpoint) is the strongest single predictor of
 same-basin trouble — but trust it only on a DFT-relaxed endpoint. `endpoint-provenance`
 flags energies taken on an MLIP geometry (`NOT_AN_ENDPOINT_MLIP_GEOMETRY`): local bond
@@ -86,6 +90,7 @@ cathode) and routes them to DFT.
 
 ```bash
 prodromos magnetic-provenance --formula FeS --magndata-code 1.42 --live  # MP-computed vs MAGNDATA ($0, pre-DFT)
+prodromos import-magndata --formula FeS        # search MAGNDATA by formula -> experimental entries
 prodromos sublattice-preflight --input case.json   # structure-level sublattice-crossing predictor ($0, pre-DFT)
 prodromos magnetic-parser <dir>                 # parse QE/ABACUS/jDFTx → table (M_tot, M_abs, drift)
 prodromos magnetic-endpoint <endA.pwo> <endB.pwo>  # GO / REVIEW / NO-GO_SINGLE_SHEET
