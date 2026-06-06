@@ -100,6 +100,24 @@ def test_discover_band_outputs_sorts_image_directories():
             shutil.rmtree(tmp_root)
 
 
+def test_discover_band_outputs_recognises_endpoints_and_neb_img():
+    # endA / neb_imgNN / endB layout: endpoints must NOT be dropped and order must be
+    # endA, neb_img01, neb_img02, endB (roadmap §E P1 bug).
+    tmp_root = Path(__file__).resolve().parent / f"_tmp_band_ep_{uuid.uuid4().hex}"
+    try:
+        for name in ["endB", "neb_img02", "endA", "neb_img01"]:
+            d = tmp_root / name
+            d.mkdir(parents=True)
+            (d / "espresso.pwo").write_text("Program PWSCF", encoding="utf-8")
+
+        outputs = discover_band_outputs(tmp_root)
+
+        assert [p.parent.name for p in outputs] == ["endA", "neb_img01", "neb_img02", "endB"]
+    finally:
+        if tmp_root.exists():
+            shutil.rmtree(tmp_root)
+
+
 def test_marc_tier1_band_corpus():
     root = Path(__file__).parent / "fixtures" / "marc_tier1_band"
 

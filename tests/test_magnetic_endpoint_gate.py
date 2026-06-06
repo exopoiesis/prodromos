@@ -53,6 +53,52 @@ def test_endpoint_gate_review_when_magnetization_missing():
     assert result.delta_total_uB is None
 
 
+def test_per_tm_threshold_avoids_false_nogo_on_slow_drift():
+    # Troilite-like: M_total = 0 (AFM), |Δ abs| = 0.52 uB just trips the 0.5 absolute
+    # threshold, but over 12 Fe that is 0.043 uB/Fe -> a smooth drift, not a crossing.
+    a = summary(0.0, 5.00)
+    b = summary(0.0, 5.52)
+    # without n_magnetic: absolute channel trips -> NO-GO
+    assert endpoint_magnetic_gate(a, b).verdict == "NO-GO_SINGLE_SHEET"
+    # with n_magnetic=12: per-TM relative threshold downgrades the drift -> GO
+    rel = endpoint_magnetic_gate(a, b, n_magnetic=12)
+    assert rel.verdict == "GO"
+    assert rel.endpoint_split is False
+    assert rel.delta_abs_per_tm_uB == pytest.approx(0.52 / 12)
+    assert any("smooth drift" in r for r in rel.reasons)
+
+
+def test_per_tm_threshold_still_flags_true_crossing():
+    # A real crossing: one Fe flips ~2 uB -> |Δ abs| ~ 2.0 over 12 Fe = 0.17/Fe... still
+    # below 0.30/TM, BUT the total channel (integer ~2 uB) catches it.
+    a = summary(0.0, 5.0)
+    b = summary(2.0, 7.0)  # delta_total=2.0 > 0.3 -> total channel splits
+    res = endpoint_magnetic_gate(a, b, n_magnetic=12)
+    assert res.verdict == "NO-GO_SINGLE_SHEET"
+
+
+def test_reconcile_band_arbiter_overrides_endpoint_nogo():
+    from prodromos.magnetic_band_gate import BandGateResult
+    from prodromos.magnetic_endpoint_gate import reconcile_endpoint_and_band
+
+    ep = endpoint_magnetic_gate(summary(0.0, 5.00), summary(0.0, 5.52))  # NO-GO (no n_mag)
+    assert ep.verdict == "NO-GO_SINGLE_SHEET"
+    band = BandGateResult(verdict="GO", sheet_crossing=False, endpoint_split=False, crossing_edge=-1)
+    combined = reconcile_endpoint_and_band(ep, band)
+    assert combined["combined_verdict"] == "GO"
+    assert combined["arbiter"] == "band"
+    assert combined["agree"] is False
+
+
+def test_reconcile_without_band_keeps_endpoint():
+    from prodromos.magnetic_endpoint_gate import reconcile_endpoint_and_band
+
+    ep = endpoint_magnetic_gate(summary(1.13, 2.43), summary(1.14, 2.10))
+    combined = reconcile_endpoint_and_band(ep, None)
+    assert combined["combined_verdict"] == ep.verdict
+    assert combined["arbiter"] == "endpoint"
+
+
 def test_marc_spin_diagnostic_endpoint_gate():
     root = Path(__file__).parent / "fixtures" / "marc_spin_diagnostic"
 

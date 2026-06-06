@@ -67,14 +67,28 @@ class BandGateResult:
 
 
 def discover_band_outputs(root: str | Path) -> list[Path]:
-    """Find one output file per immediate ``image_*`` directory."""
+    """Find one output file per immediate band sub-directory, ordered along the path.
+
+    Recognises endpoint directories (``endA``/``endB``/``initial``/``final``/...) and
+    interior images in the common NEB layouts (``image_NN`` / ``imageNN`` / ``imgNN`` /
+    ``neb_imgNN`` / a bare ``NN``), and sorts them endpoint-A first, interior images by
+    index, endpoint-B last -- so adjacency is correct. (Previously only ``image_NN``
+    was recognised; ``endA``/``endB``/``neb_imgNN`` fell back to enumeration order ->
+    wrong adjacency / dropped endpoints. Roadmap §E P1 bug.)
+    """
     root = Path(root)
     if root.is_file():
         return [root]
 
-    image_dirs = [path for path in root.iterdir() if path.is_dir() and _image_index(path.name) is not None]
+    recognised = [p for p in root.iterdir() if p.is_dir() and _band_order_key(p.name) is not None]
+    if recognised:
+        ordered = sorted(recognised, key=lambda p: _band_order_key(p.name))
+    else:
+        # fallback: any sub-directory that holds an output, by name (legacy behaviour)
+        ordered = sorted((p for p in root.iterdir() if p.is_dir()), key=lambda p: p.name)
+
     files: list[Path] = []
-    for image_dir in sorted(image_dirs, key=lambda path: _image_index(path.name) or -1):
+    for image_dir in ordered:
         output = _choose_image_output(image_dir)
         if output is not None:
             files.append(output)
@@ -83,8 +97,12 @@ def discover_band_outputs(root: str | Path) -> list[Path]:
 
 def load_band(root: str | Path) -> list[BandImage]:
     images: list[BandImage] = []
-    for fallback_index, output in enumerate(discover_band_outputs(root), start=1):
-        index = _image_index(output.parent.name) or fallback_index
+    for position, output in enumerate(discover_band_outputs(root), start=1):
+        # interior images keep their own number; endpoints / unnumbered take the
+        # sequential position so endA=first .. endB=last is preserved.
+        index = _image_index(output.parent.name)
+        if index is None:
+            index = position
         images.append(
             BandImage(
                 label=output.parent.name if output.parent.name else output.stem,
@@ -195,8 +213,34 @@ def _relative_energies(images: list[BandImage]) -> np.ndarray:
 
 
 def _image_index(name: str) -> int | None:
-    match = re.search(r"image[_-]?(\d+)", name, re.IGNORECASE)
+    match = re.search(r"(?:image|img)[_-]?(\d+)", name, re.IGNORECASE)
     return int(match.group(1)) if match else None
+
+
+# endpoint-A / endpoint-B name patterns (NEB layouts vary widely)
+_ENDA_RE = re.compile(r"(?:^|[_-])(?:end[_-]?a|enda|initial|start|reactant|ini)(?:$|[_-])", re.I)
+_ENDB_RE = re.compile(r"(?:^|[_-])(?:end[_-]?b|endb|final|product|fin)(?:$|[_-])", re.I)
+_IMG_RE = re.compile(r"(?:image|img|neb[_-]?img)[_-]?(\d+)", re.I)
+_BARE_NUM_RE = re.compile(r"^(\d+)$")
+
+
+def _band_order_key(name: str) -> tuple[int, int, str] | None:
+    """Sort key placing endpoint-A first, interior images by index, endpoint-B last.
+
+    Returns ``None`` for an unrecognised directory name (so it is skipped). Rank 0 =
+    endpoint A, 1 = interior image (by number), 2 = endpoint B.
+    """
+    if _ENDA_RE.search(name):
+        return (0, 0, name)
+    if _ENDB_RE.search(name):
+        return (2, 0, name)
+    m = _IMG_RE.search(name)
+    if m:
+        return (1, int(m.group(1)), name)
+    m = _BARE_NUM_RE.match(name)
+    if m:
+        return (1, int(m.group(1)), name)
+    return None
 
 
 def _choose_image_output(image_dir: Path) -> Path | None:

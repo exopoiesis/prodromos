@@ -9,7 +9,7 @@ than the next — **stop as soon as a hard diagnosis is found.**
 ```bash
 python -m venv .venv
 .venv/Scripts/python.exe -m pip install -e ".[dev]"   # Windows
-.venv/Scripts/python.exe -m pytest -q                  # expect: 448 passed
+.venv/Scripts/python.exe -m pytest -q                  # expect: 519 passed
 ```
 
 All gates run either as `prodromos <subcommand> ...` (installed console script) or
@@ -75,18 +75,34 @@ lengths can look physical while the single-point energy is tens of eV off.
 ```bash
 prodromos multi-endpoint ...     # enumerate candidate H endpoint sites
 prodromos soap-cluster ...       # SOAP-cluster relaxed candidates → distinct minima
+prodromos mlip-confidence --symbols Mg1 V2 S4 --migrant Mg   # TRUST_MLIP vs DFT_REQUIRED
 ```
-Run MACE *and* CHGNet; agreement on asymmetry ⇒ geometric, not magnetic.
+Run MACE *and* CHGNet; agreement on asymmetry ⇒ geometric, not magnetic. Before you
+quote a *barrier* from a foundation MLIP, `mlip-confidence` flags hosts where it is
+untrustworthy (near-degenerate itinerant 3d like V/Ti/Cr, or a multivalent redox
+cathode) and routes them to DFT.
 
 ### Magnetic gates (nspin=2 minerals — marc / pent / greig)
 
 ```bash
+prodromos magnetic-provenance --formula FeS --magndata-code 1.42 --live  # MP-computed vs MAGNDATA ($0, pre-DFT)
+prodromos sublattice-preflight --input case.json   # structure-level sublattice-crossing predictor ($0, pre-DFT)
 prodromos magnetic-parser <dir>                 # parse QE/ABACUS/jDFTx → table (M_tot, M_abs, drift)
 prodromos magnetic-endpoint <endA.pwo> <endB.pwo>  # GO / REVIEW / NO-GO_SINGLE_SHEET
 prodromos magnetic-band <neb_done_dir>          # sheet-crossing / sawtooth detection across a band
 prodromos magnetic-recommend ...                # constrained-M re-run vs MECP / two-segment routing
 ```
-**Rule:** spin-blind MLIP is for *geometry only*, never for a barrier at a spin seam.
+**Pre-DFT ($0):** `magnetic-provenance` catches a wrong computed ordering before it seeds
+the NEB (MP often mislabels Fe sulfides/phosphates FM where neutron is AFM → seed from the
+MAGNDATA experimental block). `sublattice-preflight` predicts a sheet crossing from
+structure + moment signs alone — including the redox-polaron case where a *nonmagnetic*
+Li⁺/Na⁺ migrant's compensating polaron flips sublattice (`mode="polaron"`); on NO-GO it
+emits the two-species / constrained-M recipe.
+
+**Post-DFT:** `magnetic-endpoint` accepts `--n-magnetic N` for a per-TM *relative* ΔM
+threshold (no false NO-GO on large-cell slow drift); the MCP `magnetic_verdict` tool
+auto-reconciles the endpoint screen with the full-trajectory band gate (the band gate is the
+arbiter). **Rule:** spin-blind MLIP is for *geometry only*, never a barrier at a spin seam.
 
 ### 5. NEB method selection + acceleration ($200+ run)
 
@@ -116,8 +132,12 @@ single H-dominated imaginary mode and a reported ΔZPE‡; otherwise `ELECTRONIC
 Every gate returns the same envelope shape (`prodromos.cli_contract.response_envelope`):
 `tool, version, status, verdict, confidence, reasons, next_actions, artifacts,
 warnings, result`. A thin in-process **stdio MCP server** (`prodromos-mcp`, install with
-`pip install -e ".[mcp]"`) exposes `plan`, `from_inputs`, and one tool per gate to an LLM
-agent — no proxy, no network, no Docker. Register it with an MCP client:
+`pip install -e ".[mcp]"`) exposes `plan`, `from_inputs`, one tool per gate (incl.
+`mlip_confidence`, `sublattice_preflight`, `magnetic_verdict`, `magnetic_provenance`),
+the corpus importers (`import_optimade/nomad/mp/magndata`, `merge_specs`), and two
+meta-tools (`batch`, `preflight_bundle`) that run many gates in one round-trip — no proxy,
+no network, no Docker. The server is concurrency-safe (tools run off the event loop), so
+parallel calls never wedge. Register it with an MCP client:
 
 ```json
 { "mcpServers": { "prodromos": { "command": "prodromos-mcp" } } }

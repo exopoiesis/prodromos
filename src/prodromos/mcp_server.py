@@ -17,14 +17,24 @@ the server and pumps stdio.
 """
 from __future__ import annotations
 
+import functools
+import os
+import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
+import anyio
 from mcp.server.fastmcp import FastMCP
 
 from prodromos.cli_contract import response_envelope
 
 server = FastMCP("prodromos")
+
+
+def _log(msg: str) -> None:
+    """Log to STDERR (stdout is the MCP protocol channel -- never write there)."""
+    print(f"[prodromos-mcp] {msg}", file=sys.stderr, flush=True)
 
 
 # ===========================================================================
@@ -393,6 +403,88 @@ def tool_soap_cluster(
     return run_soap_clustering(relaxed_dir, summary_json, threshold=threshold)
 
 
+def tool_mlip_confidence(
+    symbol_counts: dict[str, int],
+    charge: float = 0.0,
+    band_gap_eV: float | None = None,
+    migrant: str | None = None,
+    multivalent: bool | None = None,
+) -> dict:
+    """Predict whether a foundation-MLIP migration barrier is trustworthy (§B).
+
+    Flags hosts whose spin-blind foundation-MLIP barrier should NOT be trusted
+    (near-degenerate itinerant 3d like V/Ti/Cr, or multivalent redox TM in a cathode
+    context) and routes them to DFT; otherwise TRUST_MLIP. ``symbol_counts`` e.g.
+    ``{"Mg": 1, "V": 2, "S": 4}``; pass ``band_gap_eV`` and ``migrant`` for a sharper
+    classification.
+    """
+    from prodromos.mlip_confidence_gate import run_mlip_confidence_gate
+
+    return run_mlip_confidence_gate(
+        symbol_counts,
+        charge=charge,
+        band_gap_eV=band_gap_eV,
+        migrant=migrant,
+        multivalent=multivalent,
+    )
+
+
+def tool_sublattice_preflight(
+    sites: list[dict],
+    cell: list[list[float]],
+    migrant_a: list[float],
+    migrant_b: list[float],
+    mode: str = "migrant",
+    polaron_index_a: int | None = None,
+    polaron_index_b: int | None = None,
+    migrant_species: str = "Li",
+    redox_elements: list[str] | None = None,
+) -> dict:
+    """Structure-level (pre-DFT, $0) magnetic-sublattice crossing predictor for an
+    ion-migration NEB.
+
+    Predicts GO / NO-GO single-sheet BEFORE any SCF from structure + per-site moment
+    signs (MAGNDATA / MP metadata). ``mode="migrant"`` tracks the migrating ion's own
+    moment; ``mode="polaron"`` tracks the charge-compensating redox polaron of a
+    *nonmagnetic* migrant (Li+/Na+ cathode hop) -- the new failure mode where the
+    polaron lands on a different sublattice at A vs B (dM_total ~ 2 uB -> ill-posed).
+
+    ``sites`` is a list of ``{"element", "frac": [x,y,z], "sign": +1|-1|0,
+    "moment_uB"?, "label"?}``; if ``sign`` is absent it is derived from
+    ``moment_uB``. ``cell`` is the 3x3 lattice (Angstrom). ``migrant_a`` /
+    ``migrant_b`` are the migrant fractional coords at the two endpoints. On NO-GO the
+    envelope's ``next_actions`` carry the constrained-M / two-species recipe.
+    """
+    from prodromos.sublattice_preflight import MagSite, run_sublattice_preflight
+
+    mag_sites: list[MagSite] = []
+    for s in sites:
+        sign = s.get("sign")
+        if sign is None:
+            m = float(s.get("moment_uB") or 0.0)
+            sign = 0 if abs(m) < 0.2 else (1 if m > 0 else -1)
+        mag_sites.append(
+            MagSite(
+                element=s["element"],
+                frac=tuple(s["frac"]),
+                sign=int(sign),
+                moment_uB=s.get("moment_uB"),
+                label=s.get("label"),
+            )
+        )
+    return run_sublattice_preflight(
+        mag_sites,
+        cell,
+        tuple(migrant_a),
+        tuple(migrant_b),
+        mode=mode,
+        polaron_index_a=polaron_index_a,
+        polaron_index_b=polaron_index_b,
+        migrant_species=migrant_species,
+        redox_elements=set(redox_elements) if redox_elements else None,
+    )
+
+
 def tool_master_equation(
     barrier_matrix: list[list[float]],
     site_labels: list[str] | None = None,
@@ -486,15 +578,20 @@ def tool_magnetic_endpoint(
     endpoint_b_output: str,
     delta_total_threshold: float | None = None,
     delta_abs_threshold: float | None = None,
+    n_magnetic: int | None = None,
+    delta_abs_per_tm_threshold: float | None = None,
 ) -> dict:
     """G12 -- do NEB endpoints lie on one magnetic sheet?
 
     ``endpoint_a_output`` / ``endpoint_b_output`` are paths to the two endpoint
     SCF output files; each is parsed for total / absolute magnetization, then
-    compared (GO / NO-GO_SINGLE_SHEET).
+    compared (GO / NO-GO_SINGLE_SHEET). Pass ``n_magnetic`` (number of magnetic/TM
+    atoms) to use the PER-TM relative threshold, which stops large-cell slow-drift
+    systems from a false NO-GO (troilite).
     """
     from prodromos.magnetic_endpoint_gate import (
         DELTA_ABS_ADJ,
+        DELTA_ABS_PER_TM,
         DELTA_TOTAL_ENDPOINT,
         endpoint_magnetic_gate,
     )
@@ -511,6 +608,10 @@ def tool_magnetic_endpoint(
         delta_abs_threshold=(
             delta_abs_threshold if delta_abs_threshold is not None else DELTA_ABS_ADJ
         ),
+        n_magnetic=n_magnetic,
+        delta_abs_per_tm_threshold=(
+            delta_abs_per_tm_threshold if delta_abs_per_tm_threshold is not None else DELTA_ABS_PER_TM
+        ),
     )
     return response_envelope(
         tool="magnetic_endpoint",
@@ -518,6 +619,65 @@ def tool_magnetic_endpoint(
         confidence="medium",
         reasons=list(result.reasons),
         result=result.to_dict(),
+    )
+
+
+def tool_magnetic_verdict(
+    endpoint_a_output: str,
+    endpoint_b_output: str,
+    band_root: str | None = None,
+    n_magnetic: int | None = None,
+    delta_total_threshold: float | None = None,
+    delta_abs_threshold: float | None = None,
+    delta_abs_per_tm_threshold: float | None = None,
+) -> dict:
+    """One combined magnetic verdict: endpoint screen + band arbiter (§C).
+
+    Runs the endpoint gate (pre-launch screen, PER-TM relative threshold when
+    ``n_magnetic`` is given) and, if ``band_root`` is supplied, the band gate over
+    the full trajectory, then AUTO-RECONCILES them into ONE verdict (the band gate
+    is the arbiter; the endpoint NO-GO auto-escalates to the band check). Reports
+    both verdicts + the resolution so the user never reconciles them by hand.
+    """
+    from prodromos.magnetic_endpoint_gate import (
+        DELTA_ABS_ADJ,
+        DELTA_ABS_PER_TM,
+        DELTA_TOTAL_ENDPOINT,
+        endpoint_magnetic_gate,
+        reconcile_endpoint_and_band,
+    )
+    from prodromos.magnetic_output_parser import parse_output_file
+
+    ep = endpoint_magnetic_gate(
+        parse_output_file(endpoint_a_output),
+        parse_output_file(endpoint_b_output),
+        delta_total_threshold=(
+            delta_total_threshold if delta_total_threshold is not None else DELTA_TOTAL_ENDPOINT
+        ),
+        delta_abs_threshold=(
+            delta_abs_threshold if delta_abs_threshold is not None else DELTA_ABS_ADJ
+        ),
+        n_magnetic=n_magnetic,
+        delta_abs_per_tm_threshold=(
+            delta_abs_per_tm_threshold if delta_abs_per_tm_threshold is not None else DELTA_ABS_PER_TM
+        ),
+    )
+    band_result = None
+    if band_root:
+        from prodromos.magnetic_band_gate import analyze_band_images, load_band
+
+        band_result = analyze_band_images(load_band(band_root))
+    combined = reconcile_endpoint_and_band(ep, band_result)
+    return response_envelope(
+        tool="magnetic_verdict",
+        verdict=combined["combined_verdict"],
+        confidence="medium",
+        reasons=[combined["resolution"], *ep.reasons],
+        result={
+            "combined": combined,
+            "endpoint": ep.to_dict(),
+            "band": band_result.to_dict() if band_result is not None else None,
+        },
     )
 
 
@@ -562,6 +722,37 @@ def tool_magnetic_recommend(
 # ===========================================================================
 # 4. tm-spec importers + merge -- OPTIMADE width x NOMAD depth, all local
 # ===========================================================================
+def tool_magnetic_provenance(
+    mp_ordering: str | None = None,
+    magndata_ordering: str | None = None,
+    material_id: str | None = None,
+    formula: str | None = None,
+    space_group: int | None = None,
+    magndata_code: str | None = None,
+    live: bool = False,
+) -> dict:
+    """Cross-check COMPUTED (MP) vs EXPERIMENTAL (MAGNDATA) magnetic ordering (§C/§C-bis).
+
+    MP often mislabels Fe sulfides/phosphates FM where neutron experiment is AFM;
+    seeding an NEB from the wrong ordering puts both endpoints on the wrong sheet.
+    This gate compares the two and, on disagreement, WARNs and routes the seed to the
+    experimental MAGNDATA block. Pass the orderings directly for a $0 comparison, or
+    ``live=True`` with ``material_id``/``formula`` (+ ``magndata_code``) to fetch them
+    (MP key from env or ``secrets/mp_api_key.json``).
+    """
+    from prodromos.magnetic_provenance import run_magnetic_provenance
+
+    return run_magnetic_provenance(
+        mp_ordering=mp_ordering,
+        magndata_ordering=magndata_ordering,
+        material_id=material_id,
+        formula=formula,
+        space_group=space_group,
+        magndata_code=magndata_code,
+        live=live,
+    )
+
+
 def tool_import_optimade(
     elements: list[str] | None,
     reduced_formula: str | None = None,
@@ -862,10 +1053,87 @@ def tool_merge_specs(
 
 
 # ===========================================================================
+# 5. meta-tools -- batch / bundle (one round-trip; kill client fan-out)
+# ===========================================================================
+def tool_batch(calls: list[dict]) -> dict:
+    """Run MANY prodromos gates in ONE round-trip (sequential, server-side).
+
+    ``calls`` is a list of ``{"tool": <name>, "args": {...}}`` items. Each is
+    dispatched to the corresponding gate; per-call errors are captured (never
+    raised to the client) and returned aligned by ``index``. This removes the
+    need for the client to fan out parallel tool calls -- the failure mode that
+    trips the stdio transport.
+
+    Returns an envelope whose ``result.calls`` lists, per call,
+    ``{index, tool, status, result|error}``.
+    """
+    results: list[dict] = []
+    for i, call in enumerate(calls or []):
+        call = call or {}
+        name = call.get("tool")
+        args = call.get("args") or {}
+        fn = _GATE_TOOLS.get(name)
+        if fn is None:
+            results.append(
+                {"index": i, "tool": name, "status": "error", "error": f"unknown tool {name!r}"}
+            )
+            continue
+        try:
+            res = fn(**args)
+            results.append({"index": i, "tool": name, "status": "ok", "result": res})
+        except Exception as exc:  # never raise to the LLM -- capture per call
+            results.append(
+                {"index": i, "tool": name, "status": "error", "error": f"{type(exc).__name__}: {exc}"}
+            )
+    n_ok = sum(1 for r in results if r["status"] == "ok")
+    n_err = len(results) - n_ok
+    return response_envelope(
+        tool="batch",
+        verdict="BATCH_DONE",
+        confidence="high",
+        reasons=[f"executed {len(results)} call(s) server-side ({n_ok} ok, {n_err} error)"],
+        result={"calls": results, "n_ok": n_ok, "n_error": n_err},
+    )
+
+
+def tool_preflight_bundle(
+    case_path: str,
+    mode: str = "route",
+    budget_usd: float | None = None,
+    code: str = "auto",
+) -> dict:
+    """Run the FULL applicable pre-flight gate set for a case in ONE round-trip.
+
+    A pre-flight is a *flow*, not one gate: this loads/validates the tm-spec case
+    (or auto-converts a raw QE/ABACUS input via ``from-inputs``), walks the policy
+    graph EXECUTING every $0 gate, and returns each gate's verdict plus an overall
+    recommendation -- so the client never has to fan out one call per gate.
+
+    Parameters mirror ``plan``. Returns the ``plan`` envelope with an added
+    ``result.bundle`` summary (per-gate verdicts + overall verdict + next action).
+    """
+    env = tool_plan(case_path, mode=mode, budget_usd=budget_usd, code=code)
+    res = env.get("result") or {}
+    gates = res.get("gates", [])
+    env["result"] = {
+        **res,
+        "bundle": {
+            "n_gates": len(gates),
+            "gates": gates,
+            "overall_verdict": env.get("verdict"),
+            "next_action": res.get("next_action"),
+        },
+    }
+    return env
+
+
+# ===========================================================================
 # registration
 # ===========================================================================
 # (tool_name -> wrapper). Names are snake_case (MCP requires valid identifiers).
-_TOOLS: dict[str, Any] = {
+# ``_GATE_TOOLS`` is the set ``batch`` may dispatch over (excludes the meta-tools
+# to keep batch non-recursive); ``_TOOLS`` is the full registered surface.
+_GATE_TOOLS: dict[str, Any] = {
     "plan": tool_plan,
     "from_inputs": tool_from_inputs,
     "electron_parity": tool_electron_parity,
@@ -879,14 +1147,18 @@ _TOOLS: dict[str, Any] = {
     "neb_advisor": tool_neb_advisor,
     "saddle_proximity": tool_saddle_proximity,
     "multi_endpoint": tool_multi_endpoint,
+    "mlip_confidence": tool_mlip_confidence,
+    "sublattice_preflight": tool_sublattice_preflight,
     "soap_cluster": tool_soap_cluster,
     "master_equation": tool_master_equation,
     "gp_neb": tool_gp_neb,
     "adaptive_neb": tool_adaptive_neb,
     "magnetic_parser": tool_magnetic_parser,
     "magnetic_endpoint": tool_magnetic_endpoint,
+    "magnetic_verdict": tool_magnetic_verdict,
     "magnetic_band": tool_magnetic_band,
     "magnetic_recommend": tool_magnetic_recommend,
+    "magnetic_provenance": tool_magnetic_provenance,
     "import_optimade": tool_import_optimade,
     "import_nomad": tool_import_nomad,
     "import_mp": tool_import_mp,
@@ -894,13 +1166,136 @@ _TOOLS: dict[str, Any] = {
     "merge_specs": tool_merge_specs,
 }
 
+_TOOLS: dict[str, Any] = {
+    **_GATE_TOOLS,
+    "batch": tool_batch,
+    "preflight_bundle": tool_preflight_bundle,
+}
+
+# Optional server-side per-tool timeout (seconds). 0/unset = no timeout.
+try:
+    _TOOL_TIMEOUT_S = float(os.environ.get("PRODROMOS_MCP_TOOL_TIMEOUT_S", "0") or 0)
+except ValueError:
+    _TOOL_TIMEOUT_S = 0.0
+
+
+def _timeout_envelope(name: str, timeout_s: float) -> dict:
+    return response_envelope(
+        tool=name,
+        verdict="TIMEOUT",
+        confidence="low",
+        reasons=[f"tool {name!r} exceeded the server-side timeout of {timeout_s:g}s"],
+        next_actions=[
+            "retry with a smaller input, or call the gate as a library function",
+        ],
+    )
+
+
+def _offload(name: str, fn: Any) -> Any:
+    """Wrap a sync gate core as an ASYNC tool that runs OFF the event-loop thread.
+
+    In FastMCP 1.27 a sync (``def``) tool is executed INLINE on the asyncio event
+    loop (``Tool.run`` -> ``call_fn_with_arg_validation`` with ``is_async=False``),
+    which also hosts the stdio reader/writer -- so a running sync tool stalls both
+    request intake and response flushing, serializing concurrent calls. Offloading
+    each core via ``anyio.to_thread.run_sync`` keeps the loop free. ``functools.wraps``
+    preserves the typed signature + docstring so FastMCP still derives the correct
+    JSON schema (verified: ``is_async`` becomes True, params survive).
+    """
+
+    @functools.wraps(fn)
+    async def _async_tool(*args: Any, **kwargs: Any) -> Any:
+        call = functools.partial(fn, *args, **kwargs)
+        if _TOOL_TIMEOUT_S > 0:
+            try:
+                with anyio.fail_after(_TOOL_TIMEOUT_S):
+                    return await anyio.to_thread.run_sync(call, abandon_on_cancel=True)
+            except TimeoutError:
+                return _timeout_envelope(name, _TOOL_TIMEOUT_S)
+        return await anyio.to_thread.run_sync(call)
+
+    return _async_tool
+
+
 for _name, _fn in _TOOLS.items():
-    server.tool(name=_name)(_fn)
+    server.tool(name=_name)(_offload(_name, _fn))
+
+
+# ===========================================================================
+# singleton guard + clean shutdown (orphan-server defence)
+# ===========================================================================
+_LOCK_PATH = Path(tempfile.gettempdir()) / "prodromos-mcp.lock"
+
+
+def _pid_alive(pid: int) -> bool:
+    """Best-effort cross-platform check that ``pid`` is a live process."""
+    if pid <= 0:
+        return False
+    try:
+        if os.name == "nt":
+            import ctypes
+
+            PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+            handle = ctypes.windll.kernel32.OpenProcess(  # type: ignore[attr-defined]
+                PROCESS_QUERY_LIMITED_INFORMATION, False, pid
+            )
+            if handle:
+                ctypes.windll.kernel32.CloseHandle(handle)  # type: ignore[attr-defined]
+                return True
+            return False
+        os.kill(pid, 0)
+        return True
+    except (OSError, Exception):  # noqa: BLE001 -- best effort
+        return False
+
+
+def _acquire_singleton_lock() -> Path | None:
+    """Record our PID in the lockfile; warn (but do not kill) if a prior live
+    instance is found -- stdio is per-client, so a lingering process from a
+    ``/mcp`` reconnect is an orphan suspect. Replace policy: we take the lock.
+    """
+    try:
+        if _LOCK_PATH.exists():
+            try:
+                prev = int(_LOCK_PATH.read_text(encoding="utf-8").strip() or "0")
+            except (ValueError, OSError):
+                prev = 0
+            if prev and prev != os.getpid() and _pid_alive(prev):
+                _log(
+                    f"WARNING: prior instance pid={prev} appears alive; taking the lock "
+                    f"(orphan suspect after an /mcp reconnect). this pid={os.getpid()}"
+                )
+        _LOCK_PATH.write_text(str(os.getpid()), encoding="utf-8")
+        return _LOCK_PATH
+    except OSError as exc:  # lockfile is advisory; never block startup on it
+        _log(f"could not write lockfile {_LOCK_PATH}: {exc}")
+        return None
+
+
+def _release_singleton_lock(lock: Path | None) -> None:
+    if lock is None:
+        return
+    try:
+        if lock.exists() and lock.read_text(encoding="utf-8").strip() == str(os.getpid()):
+            lock.unlink()
+    except OSError:
+        pass
 
 
 def main() -> None:
-    """Entry point: run the prodromos MCP server over stdio (blocking)."""
-    server.run()
+    """Entry point: run the prodromos MCP server over stdio (blocking).
+
+    ``server.run()`` returns when stdin reaches EOF (the client disconnects), so
+    the ``finally`` releases the lock and the process exits cleanly -- a ``/mcp``
+    reconnect cannot orphan it. The PID is logged to stderr at start and stop.
+    """
+    _log(f"starting (pid={os.getpid()}, tools={len(_TOOLS)})")
+    lock = _acquire_singleton_lock()
+    try:
+        server.run()
+    finally:
+        _log(f"shutting down (pid={os.getpid()})")
+        _release_singleton_lock(lock)
 
 
 if __name__ == "__main__":

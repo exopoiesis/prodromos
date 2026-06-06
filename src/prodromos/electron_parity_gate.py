@@ -51,6 +51,92 @@ OPEN_SHELL_TM = {
     "Zr", "Nb", "Mo", "Tc", "Ru", "Rh", "Pd",
 }
 
+# --- A-priori closed-shell electronic descriptor (formal-oxidation d-count) ----
+# Group number (= neutral-atom (n-1)d + ns valence count) for d-block elements.
+# d_count(ion) = group - oxidation_state; d0 and d10 are diamagnetic closed shells
+# *independent of crystal-field / spin-state* (unlike LS d6), so they can be
+# rejected as non-magnetic without DFT. This is the cheap descriptor §A asks for:
+# it lets M0 reject closed-shell d0 (Ti4+, V5+) / d10 (Zn2+, Cu+, Ag+) TM cells
+# that composition-parity alone over-conservatively flags NSPIN2_RECOMMENDED.
+D_BLOCK_GROUP = {
+    "Sc": 3, "Ti": 4, "V": 5, "Cr": 6, "Mn": 7, "Fe": 8, "Co": 9, "Ni": 10,
+    "Cu": 11, "Zn": 12,
+    "Y": 3, "Zr": 4, "Nb": 5, "Mo": 6, "Tc": 7, "Ru": 8, "Rh": 9, "Pd": 10,
+    "Ag": 11, "Cd": 12,
+}
+
+# Formal anion oxidation states (simple ionic assumption -- polychalcogenide /
+# persulfide S-S bonds (e.g. pyrite S2^2-) break this, which yields a non-integer
+# or wrong TM oxidation and therefore NO override: safe by construction).
+ANION_OX = {
+    "O": -2, "S": -2, "Se": -2, "Te": -2,
+    "F": -1, "Cl": -1, "Br": -1, "I": -1,
+    "N": -3, "P": -3, "As": -3,
+    "H": 1,  # protonation context (S-H): H is +1. Hydrides are rare here.
+}
+
+# Main-group cations with a single common oxidation state (spectators). Multivalent
+# p-block (Sn, Pb, Sb, Bi, Tl) are deliberately omitted -> inference abstains.
+FIXED_CATION_OX = {
+    "Li": 1, "Na": 1, "K": 1, "Rb": 1, "Cs": 1,
+    "Be": 2, "Mg": 2, "Ca": 2, "Sr": 2, "Ba": 2,
+    "Al": 3, "Ga": 3, "In": 3, "Sc": 3, "Y": 3,
+}
+
+
+def infer_closed_shell(
+    symbol_counts: dict[str, int], charge: float = 0.0
+) -> dict:
+    """Best-effort formal-oxidation d-count for the d-block species.
+
+    Solves the single remaining d-block species' oxidation state from charge
+    balance (anions at ``ANION_OX``, fixed main-group cations at
+    ``FIXED_CATION_OX``, cell charge ``charge``). Returns::
+
+        {"status": "ok"|"ambiguous", "species": <sym>|None, "oxidation": int|None,
+         "d_count": int|None, "closed_shell": bool, "reason": str}
+
+    ``closed_shell`` is True only for an unambiguous integer d0 or d10 -- the
+    diamagnetic, spin-state-independent shells. Abstains (ambiguous, closed=False)
+    when there is not exactly one d-block species to solve, when a non-d-block
+    species is unaccounted (unknown oxidation), or when the balance is non-integer
+    / out of [0, group] range.
+    """
+    d_species = [s for s in symbol_counts if s in D_BLOCK_GROUP]
+    if len(d_species) != 1:
+        return {"status": "ambiguous", "species": None, "oxidation": None,
+                "d_count": None, "closed_shell": False,
+                "reason": f"need exactly 1 d-block species to solve, found {len(d_species)}"}
+    tm = d_species[0]
+    fixed_sum = 0.0
+    for s, n in symbol_counts.items():
+        if s == tm:
+            continue
+        if s in ANION_OX:
+            fixed_sum += ANION_OX[s] * n
+        elif s in FIXED_CATION_OX:
+            fixed_sum += FIXED_CATION_OX[s] * n
+        else:
+            return {"status": "ambiguous", "species": tm, "oxidation": None,
+                    "d_count": None, "closed_shell": False,
+                    "reason": f"unaccounted species {s!r} (no fixed oxidation state)"}
+    n_tm = symbol_counts[tm]
+    ox = (charge - fixed_sum) / n_tm
+    if abs(ox - round(ox)) > 1e-9:
+        return {"status": "ambiguous", "species": tm, "oxidation": None,
+                "d_count": None, "closed_shell": False,
+                "reason": f"non-integer formal oxidation {ox:.3f} for {tm} (S-S / mixed valence?)"}
+    ox_i = int(round(ox))
+    d_count = D_BLOCK_GROUP[tm] - ox_i
+    if d_count < 0 or d_count > 10:
+        return {"status": "ambiguous", "species": tm, "oxidation": ox_i,
+                "d_count": d_count, "closed_shell": False,
+                "reason": f"{tm} d-count {d_count} out of [0,10] -- implausible balance"}
+    closed = d_count in (0, 10)
+    return {"status": "ok", "species": tm, "oxidation": ox_i, "d_count": d_count,
+            "closed_shell": closed,
+            "reason": f"{tm}^{ox_i:+d} -> d{d_count}" + (" (closed shell)" if closed else "")}
+
 
 def run_electron_parity_gate(
     symbol_counts: dict[str, int],
@@ -98,12 +184,28 @@ def run_electron_parity_gate(
     n_e_int = int(round(n_e))
     parity = "odd" if n_e_int % 2 else "even"
     tms = sorted(s for s in symbol_counts if s in OPEN_SHELL_TM)
-    has_tm = bool(tms)
 
     # detect whether a metallic/smearing context was signalled
     _is_metallic = metallic or (smearing is not None and smearing.strip() != "")
 
-    if parity == "odd":
+    # A-priori closed-shell descriptor: reject d0/d10 TM cells the parity gate
+    # would otherwise over-conservatively flag. effective_tms = the open-shell TMs
+    # that are NOT inferred to be a diamagnetic closed shell.
+    ox_inf = infer_closed_shell(symbol_counts, charge=charge)
+    closed_tm: list[str] = []
+    if ox_inf["status"] == "ok" and ox_inf["closed_shell"] and ox_inf["species"]:
+        closed_tm = [ox_inf["species"]]
+    effective_tms = [t for t in tms if t not in closed_tm]
+    has_eff_tm = bool(effective_tms)
+
+    # vacancy-odd vs open-shell-TM-odd discriminator: an ODD electron count from a
+    # vacancy / off-stoichiometry / lone pair on a diamagnetic-cation system (no
+    # effective open-shell TM) under metallic SMEARING smears at E_F -> non-magnetic
+    # -> nspin=1 is acceptable. (Manuscript caveat 5: PbS / In-S / GaS, and d0/d10
+    # TM hosts.) Without smearing the parity constraint is hard -> nspin=2.
+    _vacancy_odd_ok = (parity == "odd") and (not has_eff_tm) and _is_metallic
+
+    if parity == "odd" and not _vacancy_odd_ok:
         verdict = "NSPIN2_MANDATORY"
         confidence = "high"
         nspin_required = 2
@@ -128,11 +230,25 @@ def run_electron_parity_gate(
                 "field -- NSPIN1_OK when mabs_per_tm < 0.30 uB/TM), else re-do the barrier "
                 "at nspin=2. See spin_collapse_verdict.magnetization_settled for interpretation."
             )
-        if has_tm:
-            next_actions.append(f"seed/inspect local moments on {', '.join(tms)} (AFM vs FM)")
+        if effective_tms:
+            next_actions.append(f"seed/inspect local moments on {', '.join(effective_tms)} (AFM vs FM)")
         next_actions.append("re-relax endpoints at nspin=2 (nspin=1-relaxed geometry is invalid)")
         next_actions.append("verify post-DFT with magnetic_endpoint_gate.py / magnetic_band_gate.py")
-    elif has_tm:
+    elif _vacancy_odd_ok:
+        verdict = "NSPIN1_OK"
+        confidence = "medium"
+        nspin_required = 1
+        total_mag_parity = "odd"
+        min_abs_total_mag = 1
+        _cs = f" ({ox_inf['reason']})" if closed_tm else ""
+        reasons.append(
+            f"N_e={n_e_int} is ODD but there is NO effective open-shell TM{_cs} and metallic "
+            f"smearing is in use -> the odd electron is a vacancy / off-stoichiometry / lone-pair "
+            f"artefact smeared at E_F, not an open-shell moment -> nspin=1 is acceptable. "
+            f"(vacancy-odd, NOT TM-odd; manuscript caveat 5.)"
+        )
+        next_actions.append("confirm cheaply: nspin=2 single-point should give |Mabs| -> 0")
+    elif has_eff_tm:
         verdict = "NSPIN2_RECOMMENDED"
         confidence = "medium"
         nspin_required = 2
@@ -140,7 +256,7 @@ def run_electron_parity_gate(
         min_abs_total_mag = 0
         reasons.append(
             f"N_e={n_e_int} is EVEN (parity allows nspin=1), BUT open-shell TM present "
-            f"({', '.join(tms)}) -> AFM/FM ordering possible. nspin=1 may miss local moments."
+            f"({', '.join(effective_tms)}) -> AFM/FM ordering possible. nspin=1 may miss local moments."
         )
         next_actions.append("run nspin=2 single-point with starting_magnetization; compare E vs nspin=1")
         next_actions.append("verify with magnetic gates; nspin=1 only if moments collapse to 0")
@@ -150,7 +266,14 @@ def run_electron_parity_gate(
         nspin_required = 1
         total_mag_parity = "even"
         min_abs_total_mag = 0
-        reasons.append(f"N_e={n_e_int} is EVEN and no open-shell TM -> closed-shell nspin=1 is defensible.")
+        if closed_tm:
+            reasons.append(
+                f"N_e={n_e_int} is EVEN and the only d-block species is a closed shell "
+                f"({ox_inf['reason']}) -> diamagnetic, spin-state-independent -> nspin=1 is "
+                f"defensible despite the TM (a-priori d-count override of NSPIN2_RECOMMENDED)."
+            )
+        else:
+            reasons.append(f"N_e={n_e_int} is EVEN and no open-shell TM -> closed-shell nspin=1 is defensible.")
 
     result = {
         "symbol_counts": symbol_counts,
@@ -161,6 +284,9 @@ def run_electron_parity_gate(
         "total_magnetization_parity_constraint": total_mag_parity,
         "min_abs_total_magnetization_uB": min_abs_total_mag,
         "open_shell_tm": tms,
+        "effective_open_shell_tm": effective_tms,
+        "closed_shell_tm": closed_tm,
+        "oxidation_inference": ox_inf,
         "valence_used": {s: valence[s] for s in symbol_counts},
         "metallic_smearing_context": _is_metallic,
     }

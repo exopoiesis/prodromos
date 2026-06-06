@@ -87,6 +87,51 @@ def test_valence_override_parser():
     assert parse_valence_overrides(["Fe=16", "S=6"]) == {"Fe": 16, "S": 6}
 
 
+def test_closed_shell_d0_tis2_overrides_to_nspin1():
+    # TiS2: Ti4+ d0 (closed shell) -> NSPIN1_OK despite the open-shell TM Ti.
+    env = run_electron_parity_gate({"Ti": 1, "S": 2})
+    assert env["verdict"] == "NSPIN1_OK"
+    assert env["result"]["closed_shell_tm"] == ["Ti"]
+    assert env["result"]["oxidation_inference"]["d_count"] == 0
+    assert env["result"]["effective_open_shell_tm"] == []
+
+
+def test_closed_shell_d10_cu2s_overrides_to_nspin1():
+    # Cu2S: Cu+ d10 (closed shell) -> NSPIN1_OK despite the open-shell TM Cu.
+    env = run_electron_parity_gate({"Cu": 2, "S": 1})
+    assert env["verdict"] == "NSPIN1_OK"
+    assert env["result"]["closed_shell_tm"] == ["Cu"]
+    assert env["result"]["oxidation_inference"]["d_count"] == 10
+
+
+def test_persulfide_fes2_not_overridden():
+    # Fe32S64 balance gives a non-d0/d10 formal d-count -> NO false override.
+    env = run_electron_parity_gate({"Fe": 32, "S": 64})
+    assert env["verdict"] == "NSPIN2_RECOMMENDED"
+    assert env["result"]["closed_shell_tm"] == []
+
+
+def test_vacancy_odd_diamagnetic_metallic_is_nspin1():
+    # GaS-like: odd electron, no open-shell TM, metallic smearing -> vacancy-odd -> nspin=1.
+    env = run_electron_parity_gate({"Ga": 1, "S": 1}, metallic=True)
+    assert env["result"]["parity"] == "odd"
+    assert env["verdict"] == "NSPIN1_OK"
+    assert env["result"]["nspin_required"] == 1
+    assert any("vacancy-odd" in r for r in env["reasons"])
+
+
+def test_vacancy_odd_without_smearing_stays_mandatory():
+    # Same composition WITHOUT smearing: hard parity constraint -> nspin=2.
+    env = run_electron_parity_gate({"Ga": 1, "S": 1})
+    assert env["verdict"] == "NSPIN2_MANDATORY"
+
+
+def test_open_shell_odd_metallic_still_mandatory():
+    # Fe31S64H1 with metallic smearing: Fe is genuinely open-shell -> still mandatory.
+    env = run_electron_parity_gate({"Fe": 31, "S": 64, "H": 1}, metallic=True)
+    assert env["verdict"] == "NSPIN2_MANDATORY"
+
+
 def test_real_pyrite_endpoint_vs_pristine():
     base = Path(__file__).parent / "fixtures" / "pyr_VFe"
     endA = run_electron_parity_gate(counts_from_structure(base / "relaxed_endA.xyz"))

@@ -61,3 +61,37 @@ Public-hygiene pass: internal session ids, absolute machine paths, and reference
 unpublished back-office docs were stripped from source comments/docstrings and demo
 runners; all docs and code comments are English. Line endings normalized to LF via
 `.gitattributes`.
+
+## D-005 (2026-06-06) — Framework backlog cleared: MCP transport fix + 4 new gates
+
+The post-Paper-1 improvement backlog (the private `PRODROMOS_FRAMEWORK_ROADMAP.md`) was worked
+down to the compute-bound items. Shipped:
+
+- **§F MCP transport hang (PRODUCTION BLOCKER).** Root cause confirmed by a deterministic
+  in-memory harness (`tests/test_mcp_transport.py`): FastMCP 1.27 runs a sync tool INLINE on the
+  asyncio loop while the lowlevel server dispatches every request on that same loop, so one sync
+  tool blocks intake + flush and serializes all concurrent calls. Fix: every tool registered via
+  `_offload(name, fn)` — a `functools.wraps`-ed async wrapper that runs the sync core on
+  `anyio.to_thread.run_sync` (typed schema + docstring preserved). Plus a PID-lockfile singleton
+  guard + clean EOF shutdown, two meta-tools (`batch`, `preflight_bundle`) that collapse client
+  fan-out into one round-trip, and an opt-in per-tool timeout (`PRODROMOS_MCP_TOOL_TIMEOUT_S`).
+  The harness proves inline serializes (~N×sleep) and offload runs concurrent (~sleep).
+- **N-20 `electron_parity` smarter M0** — formal-oxidation d-count (`infer_closed_shell`) rejects
+  d⁰/d¹⁰ closed shells; vacancy-odd vs TM-odd discriminator under metallic smearing.
+- **N-21 `mlip_confidence`** — flags hosts where a foundation-MLIP barrier is untrustworthy
+  (near-degenerate itinerant 3d / multivalent redox cathode) → routes to DFT.
+- **N-22 `sublattice_preflight`** — structure-level (pre-DFT, $0) magnetic-sublattice-crossing
+  predictor; `mode="migrant"` and `mode="polaron"` (the redox-polaron failure mode for nonmagnetic
+  Li⁺/Na⁺ cathode hops); emits the two-species / constrained-M recipe on NO-GO.
+- **N-23 `magnetic_verdict`** — per-TM *relative* endpoint ΔM threshold (kills false NO-GO on
+  large-cell slow drift, e.g. troilite) + auto-reconcile of the endpoint screen with the
+  full-trajectory band gate (band gate is the arbiter) into one combined verdict.
+- **N-24 `magnetic_provenance`** — cross-checks MP-computed vs MAGNDATA-experimental ordering →
+  routes the NEB seed to the experimental block, WARNs on conflict (MP mislabels Fe sulfides/
+  phosphates FM). MP key from env or `secrets/mp_api_key.json`.
+- **Bug** — band-directory discovery now recognises `endA`/`endB`/`neb_imgNN` (not just `image_NN`)
+  and orders endpoint-A → interior → endpoint-B (was dropping endpoints / mis-ordering adjacency).
+
+MCP surface: 29 gate tools + 2 meta-tools. **Full suite green (516 tests).** Remaining backlog is
+compute-bound [VAL] (external NEB-band corpus, prospective 5-paper DFT sweep) or the deferred [SW]
+decision-engine note — no further pure-software gate work outstanding.

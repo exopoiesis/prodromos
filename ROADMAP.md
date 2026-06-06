@@ -26,7 +26,11 @@ The framework is no longer a set of standalone gates — it is an orchestrated t
   so a structure-only import resolves to a magnetic-readiness verdict instead of
   `NEEDS_DATA(workflow.endpoints)`. `select_policy_graph(doc)` picks by kind/endpoints.
 - **MCP server** — thin in-process stdio (`prodromos-mcp`); `plan` + `from_inputs` + one
-  tool per gate + the three importers + `merge_specs`; no proxy/network/Docker.
+  tool per gate + the three importers + `merge_specs`; no proxy/network/Docker. **Concurrency-safe
+  (2026-06-06):** every tool runs OFF the event loop via `anyio.to_thread.run_sync` (sync tools no
+  longer block stdio intake/flush), with a PID-singleton guard + clean EOF shutdown, two meta-tools
+  (`batch`, `preflight_bundle`) to avoid client fan-out, and an opt-in per-tool timeout. Verified by
+  a deterministic in-memory transport harness.
 
 ## Next
 - **`plan` tree calibration from real campaign outcomes** (`update_from_outcomes`): the
@@ -61,6 +65,13 @@ entry point, a `prodromos` subcommand, and unit tests (full suite green).
 | N-17 | structure-mode policy graph for bare SinglePoint/Relax corpus cases (parity → spin-collapse → nspin verdict); `select_policy_graph` by kind; `spin_collapse` adapter now reads `magnetic.magmoms_uB` | `plan` (structure mode) |
 | N-18 | `external-reference` NOMAD 422 self-heal: strips a non-doc-quantity `include` field named in the 422 body and retries (kills the recurring "flap"-masquerade-of-422) | `external-reference` |
 | N-19 | `import-magndata` experimental magnetic anchor (MAGNDATA magCIF → tm-spec `magnetic` block); FM/AFM/ferri derived rigorously from the file's magnetic symmetry ops (axial-vector projector), not a hardcoded table; MCP `import_magndata` | tm-spec `import-magndata` |
+| N-20 | smarter M0: formal-oxidation d-count (`infer_closed_shell`) rejects closed-shell d⁰/d¹⁰ TM cells; vacancy-odd vs open-shell-TM-odd discriminator under metallic smearing | `electron-parity` |
+| N-21 | `mlip_confidence` gate — flags hosts where a foundation-MLIP barrier is untrustworthy (near-degenerate itinerant 3d / multivalent redox cathode) → route to DFT | MCP `mlip_confidence` |
+| N-22 | `sublattice_preflight` — structure-level (pre-DFT, $0) magnetic-sublattice-crossing predictor; migrant + redox-polaron modes; emits two-species / constrained-M recipe | MCP `sublattice_preflight` |
+| N-23 | `magnetic_verdict` — per-TM *relative* endpoint ΔM threshold (no false NO-GO on slow drift) + auto-reconcile endpoint screen with the band-gate arbiter into one verdict | MCP `magnetic_verdict` / `magnetic_endpoint(n_magnetic=...)` |
+| N-24 | `magnetic_provenance` — MP-computed vs MAGNDATA-experimental ordering cross-check → route seed to experiment, WARN on conflict | MCP `magnetic_provenance` |
+| N-25 | band-directory discovery recognises `endA`/`endB`/`neb_imgNN` (not just `image_NN`) and orders endpoint→interior→endpoint (correct adjacency) | `magnetic-band` |
+| meta | `batch` (many gates, one round-trip) + `preflight_bundle` (all $0 gates for a case) — collapse MCP client fan-out | MCP `batch` / `preflight_bundle` |
 
 ## Backlog (carried)
 
