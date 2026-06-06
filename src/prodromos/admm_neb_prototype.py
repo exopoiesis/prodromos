@@ -19,7 +19,6 @@ standard NEB vs ADMM-NEB convergence behavior.
 """
 from __future__ import annotations
 import json
-import sys
 from pathlib import Path
 import numpy as np
 import matplotlib
@@ -286,7 +285,7 @@ def benchmark(endA, endB, label, max_iter=2000, fmax_target=0.5):
         "path": neb_std.x.tolist(),
         "history": history_std,
     }
-    print(f"\n  Standard NEB:")
+    print("\n  Standard NEB:")
     print(f"    iterations: {it + 1}, final fmax: {fmax:.4f}")
     print(f"    barrier from endA: {barrier_std:.2f}")
 
@@ -309,7 +308,7 @@ def benchmark(endA, endB, label, max_iter=2000, fmax_target=0.5):
         "path": neb_admm.x.tolist(),
         "history": history_admm,
     }
-    print(f"\n  ADMM-NEB:")
+    print("\n  ADMM-NEB:")
     print(f"    iterations: {it + 1}, final fmax: {fmax:.4f}")
     print(f"    barrier from endA: {barrier_admm:.2f}")
     return results
@@ -343,7 +342,7 @@ def plot_results(results_dict, out_path):
     y_grid = np.linspace(-0.3, 2.0, 80)
     X, Y = np.meshgrid(x_grid, y_grid)
     Z = V_MB(np.stack([X, Y], axis=-1))
-    cs = axes[2].contour(X, Y, Z, levels=20, cmap="viridis", alpha=0.6)
+    axes[2].contour(X, Y, Z, levels=20, cmap="viridis", alpha=0.6)
     axes[2].set_xlabel("x")
     axes[2].set_ylabel("y")
     axes[2].set_title("Paths on MB potential")

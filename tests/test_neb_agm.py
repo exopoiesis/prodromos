@@ -81,7 +81,6 @@ def test_eta_ordering_by_role():
     agm = make_agm()
     i = 5
     agm.curv[i] = 1.0
-    e_basin = agm._eta_for_role("basin", i)
     e_ridge = agm._eta_for_role("ridge", i)
     e_stuck = agm._eta_for_role("stuck", i)
     assert e_ridge < e_stuck, "ridge must step smaller than stuck-escape"

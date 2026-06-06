@@ -28,7 +28,6 @@ DOWNGRADED when provenance != 'dft_relaxed', regardless of local bond geometry.
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from pathlib import Path
 

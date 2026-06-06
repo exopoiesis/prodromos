@@ -25,7 +25,6 @@ import numpy as np
 from scipy.linalg import eig
 import matplotlib
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 
 from prodromos.cli_contract import dump_json, response_envelope
 
@@ -204,7 +203,7 @@ def analyze_network(E_a_matrix: np.ndarray, site_labels: list = None,
         if site_energies is not None:
             print(f"  Site energies (meV vs lowest): "
                   f"{[f'{(e - site_energies.min())*1000:.1f}' for e in site_energies]}")
-        print(f"\n  Equilibrium population (Boltzmann):")
+        print("\n  Equilibrium population (Boltzmann):")
         for lbl, p in zip(site_labels, P_eq):
             bar = "█" * int(p * 50)
             print(f"    {lbl}: {p*100:.2f}% {bar}")

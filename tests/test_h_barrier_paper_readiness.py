@@ -1,9 +1,7 @@
 """Tests for N-15 h_barrier_paper_readiness gate."""
 import sys
 from pathlib import Path
-import math
 
-import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 from prodromos.h_barrier_paper_readiness import (

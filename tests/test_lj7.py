@@ -24,8 +24,10 @@ def test_lj_grad_matches_numerical():
     g = lj_grad(x)
     eps = 1e-6
     for i in range(0, 21, 7):  # sample a few components
-        xp = x.copy(); xp[i] += eps
-        xm = x.copy(); xm[i] -= eps
+        xp = x.copy()
+        xp[i] += eps
+        xm = x.copy()
+        xm[i] -= eps
         num = (lj_energy(xp) - lj_energy(xm)) / (2 * eps)
         assert abs(num - g[i]) < 1e-3
 

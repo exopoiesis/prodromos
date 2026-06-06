@@ -62,7 +62,8 @@ class QuadraticSurrogate:
         self.H = np.zeros((dim, dim))
         k = 1 + dim
         for (i, j) in quad_idx:
-            v = coef[k]; k += 1
+            v = coef[k]
+            k += 1
             if i == j:
                 self.H[i, i] = 2.0 * v       # because ½ H_ii dx² -> coef = ½H_ii*... ; v multiplies dx_i²
             else:
@@ -97,8 +98,10 @@ class GPSurrogate:
         x = np.asarray(x, float)
         g = np.zeros_like(x)
         for i in range(len(x)):
-            xp = x.copy(); xp[i] += eps
-            xm = x.copy(); xm[i] -= eps
+            xp = x.copy()
+            xp[i] += eps
+            xm = x.copy()
+            xm[i] -= eps
             fp = self.gp.predict(xp[None, :])[0]
             fm = self.gp.predict(xm[None, :])[0]
             g[i] = (fp - fm) / (2 * eps)

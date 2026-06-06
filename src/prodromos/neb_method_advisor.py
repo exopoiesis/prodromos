@@ -232,7 +232,6 @@ def run_neb_method_advisor(case: dict | None = None) -> dict:
     same_basin = dict(case.get("same_basin") or {})
     freq = dict(case.get("freq") or {})
     methods_already_tried = _as_list(case.get("methods_already_tried"))
-    mlip_cross = dict(case.get("mlip_cross") or {})
     mechanism_hint = case.get("mechanism_hint")
     expected_range = case.get("expected_barrier_range_meV")
     failure_signature_hint = case.get("failure_signature_hint")

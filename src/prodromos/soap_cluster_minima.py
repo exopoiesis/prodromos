@@ -111,7 +111,7 @@ def cluster_structures(relaxed_dir, summary_path, distance_threshold=0.5):
     for r, label in zip(valid_results, labels):
         clusters.setdefault(int(label), []).append(r)
 
-    print(f"\n  Cluster summary (sorted by E_rep):")
+    print("\n  Cluster summary (sorted by E_rep):")
     cluster_info = []
     for cid, members in clusters.items():
         members.sort(key=lambda x: x["E_final_eV"])

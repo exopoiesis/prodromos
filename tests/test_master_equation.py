@@ -3,8 +3,6 @@ import numpy as np
 import pytest
 
 from prodromos.master_equation_kinetics import (
-    KB_EV_PER_K,
-    NU_HZ,
     rate_matrix,
     equilibrium_distribution,
     slowest_relaxation,

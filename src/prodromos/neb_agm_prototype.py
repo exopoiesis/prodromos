@@ -105,7 +105,6 @@ class NEBAGM:
         self.same_basin_status = None
         self.gperp_norm = np.zeros(n_images)  # per-image perpendicular force (for gate)
 
-        d = self.x.shape[1]
         # per-image MEMORY
         self.prev_x = [None] * n_images          # last position
         self.prev_gperp = [None] * n_images       # last perpendicular gradient
@@ -462,21 +461,31 @@ def benchmark(endA, endB, label, max_iter=2000, fmax_target=0.5, n_images=11):
 
 def plot(results, out):
     fig, ax = plt.subplots(1, 3, figsize=(17, 5))
-    x = np.linspace(-1.5, 1.0, 80); y = np.linspace(-0.3, 2.0, 80)
-    X, Y = np.meshgrid(x, y); Z = V_MB(np.stack([X, Y], -1))
+    x = np.linspace(-1.5, 1.0, 80)
+    y = np.linspace(-0.3, 2.0, 80)
+    X, Y = np.meshgrid(x, y)
+    Z = V_MB(np.stack([X, Y], -1))
     colors = {"standard_NEB": "red", "string_method": "blue", "NEB_AGM": "green"}
     for label, res in results.items():
         for m, r in res.items():
             ax[0].plot(r["V_profile"], "-o", ms=3, label=f"{label}/{m}")
             ax[1].semilogy(r["history"], color=colors.get(m), label=f"{label}/{m}")
-    ax[0].set(title="Final V profile", xlabel="image", ylabel="V"); ax[0].legend(fontsize=6); ax[0].grid(alpha=.3)
-    ax[1].set(title="Convergence", xlabel="iter", ylabel="max|grad_perp|"); ax[1].legend(fontsize=6); ax[1].grid(alpha=.3)
+    ax[0].set(title="Final V profile", xlabel="image", ylabel="V")
+    ax[0].legend(fontsize=6)
+    ax[0].grid(alpha=.3)
+    ax[1].set(title="Convergence", xlabel="iter", ylabel="max|grad_perp|")
+    ax[1].legend(fontsize=6)
+    ax[1].grid(alpha=.3)
     ax[2].contour(X, Y, Z, levels=20, cmap="viridis", alpha=.5)
     lastlabel = list(results.keys())[-1]
     for m, r in results[lastlabel].items():
-        p = np.array(r["path"]); ax[2].plot(p[:, 0], p[:, 1], "-o", ms=3, color=colors.get(m), label=m)
-    ax[2].set(title=f"Paths ({lastlabel})", xlabel="x", ylabel="y"); ax[2].legend(fontsize=7)
-    plt.tight_layout(); plt.savefig(out, dpi=130); plt.close()
+        p = np.array(r["path"])
+        ax[2].plot(p[:, 0], p[:, 1], "-o", ms=3, color=colors.get(m), label=m)
+    ax[2].set(title=f"Paths ({lastlabel})", xlabel="x", ylabel="y")
+    ax[2].legend(fontsize=7)
+    plt.tight_layout()
+    plt.savefig(out, dpi=130)
+    plt.close()
     print(f"  saved {out}")
 
 

@@ -5,11 +5,11 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from prodromos.admm_neb_prototype import V_MB, grad_V_MB, MB_MINIMA
+from prodromos.admm_neb_prototype import V_MB, MB_MINIMA
 from prodromos.neb_agm_prototype import NEBAGM, run_method
 from prodromos.path_convergence import (
-    resample_uniform, perp_residual_on_curve, path_change,
-    barrier_on_curve, monitor_invariance_gate,
+    resample_uniform, path_change,
+    monitor_invariance_gate,
 )
 
 A, B = MB_MINIMA["A"], MB_MINIMA["B"]
@@ -95,9 +95,7 @@ def test_dense_barrier_more_accurate_than_node_max_for_uniform():
     it (node-max underestimates)."""
     agm = NEBAGM(A, B, n_images=11, climb=False, adaptive_reparam=False)
     run_method(agm, 1500, 0.5)
-    node_bar = max(V_MB(x) for x in agm.x) - V_MB(agm.x[0])
-    dense_bar = barrier_on_curve(agm.x, V_MB) + (V_MB(agm.x[-1]) > V_MB(agm.x[0])) * 0
-    # dense barrier (from higher endpoint) ~106-from-A frame; compare saddle height
+    # compare saddle height: dense spline vs node-max
     pts, _ = resample_uniform(agm.x, 200)
     dense_saddle = max(V_MB(p) for p in pts)
     node_saddle = max(V_MB(x) for x in agm.x)

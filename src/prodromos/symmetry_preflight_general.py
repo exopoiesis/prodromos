@@ -241,7 +241,7 @@ def run_test(mineral_name, pristine_path, endA_path, triple_path,
         n_above_1 = int((non_h_costs > 1.0).sum())
         h_cost = float(costs_e[h_idx])
 
-        print(f"\n  Test 2 [endA with V_Fe + H]:")
+        print("\n  Test 2 [endA with V_Fe + H]:")
         print(f"    H displacement: {h_cost:.4f} Å")
         print(f"    Non-H max disp: {max_e:.4f} Å (mean {mean_e:.4f})")
         print(f"    Non-H >0.1 Å: {n_above_01}/{len(syms_endA)-1}")
@@ -329,7 +329,7 @@ def run_test(mineral_name, pristine_path, endA_path, triple_path,
         if known_dft_barrier_meV is not None:
             print(f"  GROUND TRUTH: barrier = {known_dft_barrier_meV} meV (known)")
         else:
-            print(f"  GROUND TRUTH: unknown — this is PREDICTION")
+            print("  GROUND TRUTH: unknown — this is PREDICTION")
 
         result: dict = {
             "mineral": mineral_name,
@@ -432,19 +432,20 @@ def run_symmetry_l1(
     jitter_trials=5,
 ) -> dict:
     """Run the L1 symmetry gate and return an MCP-shaped envelope."""
-    _run = lambda: run_test(
-        mineral_name,
-        pristine_path,
-        end_a_path,
-        triple_path,
-        known_dft_barrier_meV,
-        global_disp_threshold=global_disp_threshold,
-        global_disp_per_atom_A=global_disp_per_atom_A,
-        log_assignment=log_assignment,
-        check_assignment_stability_flag=check_assignment_stability_flag,
-        jitter_sigma=jitter_sigma,
-        jitter_trials=jitter_trials,
-    )
+    def _run():
+        return run_test(
+            mineral_name,
+            pristine_path,
+            end_a_path,
+            triple_path,
+            known_dft_barrier_meV,
+            global_disp_threshold=global_disp_threshold,
+            global_disp_per_atom_A=global_disp_per_atom_A,
+            log_assignment=log_assignment,
+            check_assignment_stability_flag=check_assignment_stability_flag,
+            jitter_sigma=jitter_sigma,
+            jitter_trials=jitter_trials,
+        )
     if verbose:
         result = _run()
     else:

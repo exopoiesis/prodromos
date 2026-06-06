@@ -68,14 +68,13 @@ def enumerate_sites(pristine_path: str, triple_path: str, out_dir: Path,
     cell = np.array(pristine.get_cell())
     positions = pristine.get_positions()
     symbols = pristine.get_chemical_symbols()
-    numbers = pristine.get_atomic_numbers()
 
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     V_pos = positions[V_Fe]
-    is_Fe_vacancy = (symbols[V_Fe] == "Fe")
-    print(f"\n=== Site enumeration: {pristine_path.split(chr(92))[-1] if '\\' in pristine_path else pristine_path.split('/')[-1]} ===")
+    pristine_name = Path(pristine_path).name
+    print(f"\n=== Site enumeration: {pristine_name} ===")
     print(f"  V_idx = {V_Fe} ({symbols[V_Fe]}-vacancy)")
     print(f"  V position: {V_pos}")
     print(f"  n_atoms: {len(pristine)}, formula: {pristine.get_chemical_formula()}")
@@ -146,7 +145,7 @@ def enumerate_sites(pristine_path: str, triple_path: str, out_dir: Path,
         d = np.linalg.norm(v)
         fe_neighbors.append((i, d, v))
     fe_neighbors.sort(key=lambda x: x[1])
-    print(f"\n  Nearest 6 Fe to V (Class 3 anchors, cubane test):")
+    print("\n  Nearest 6 Fe to V (Class 3 anchors, cubane test):")
     for fe_idx, d, v in fe_neighbors[:6]:
         marker = " ← CLOSE (cubane edge?)" if d < fe_cutoff else ""
         print(f"    Fe#{fe_idx}: d={d:.3f} Å{marker}")

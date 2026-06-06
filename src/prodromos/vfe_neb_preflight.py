@@ -233,7 +233,6 @@ class VFeNEBPreflight:
         anisotropy = self.report["gates"]["G5_anisotropy"]["anisotropy_ratio"]
         all_equiv = self.report["gates"]["G6_s_orbit"]["all_equivalent"]
         n_pairs = self.report["gates"]["G7_hop_pairs"]["n_symmetric_pairs"]
-        coord_type = self.report["gates"]["G2_coordination"]["coordination_type"]
         d_spread = self.report["gates"]["G2_coordination"]["distance_spread_A"]
 
         # Reasoning
@@ -345,11 +344,11 @@ class VFeNEBPreflight:
             print(f"  Barrier estimate: {v['barrier_estimate_meV'][0]:.0f}–{v['barrier_estimate_meV'][1]:.0f} meV")
         print(f"  Note: {v['note']}")
         if v["red_flags"]:
-            print(f"  Red flags:")
+            print("  Red flags:")
             for rf in v["red_flags"]:
                 print(f"    - {rf}")
         if v["warnings"]:
-            print(f"  Warnings:")
+            print("  Warnings:")
             for w in v["warnings"]:
                 print(f"    - {w}")
 

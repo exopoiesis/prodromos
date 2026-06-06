@@ -9,7 +9,6 @@ from prodromos.lint_dft_script import (
     run_lint_dft_script,
     _check_pseudo_dir,
     _check_outdir_nesting,
-    _check_extxyz_clean_read,
     _check_upf_wfc,
 )
 

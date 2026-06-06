@@ -1,9 +1,6 @@
 """Tests for multi_endpoint_enumeration.py."""
-from pathlib import Path
 import numpy as np
-import pytest
 from ase import Atoms
-from ase.io import write
 
 from prodromos.multi_endpoint_enumeration import (
     mic_vec,

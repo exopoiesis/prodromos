@@ -1,5 +1,4 @@
 """Tests for symmetry_preflight_general.py (Hungarian symmetry test)."""
-from pathlib import Path
 import numpy as np
 import pytest
 from ase import Atoms
@@ -45,8 +44,7 @@ class TestApplyR:
         # New positions = old + 0.1 * a along x (modulo cell)
         # MIC-wrapped, so direct equality may not hold
         # Just check rotation R = identity preserves coordination
-        diffs = new_pos - atoms.get_positions()
-        # Should be approximately constant shift (mod cell)
+        # (positions shift by a constant mod cell; shape must be preserved)
         assert new_pos.shape == atoms.get_positions().shape
 
     def test_inversion_inverts_positions(self):
