@@ -293,6 +293,46 @@ def tool_lint_dft_script(
     return run_lint_dft_script(script_path, pseudo_dir=pseudo_dir, xyz_path=xyz_path)
 
 
+def tool_lint_cp2k_input(inp_path: str, layered: bool = True) -> dict:
+    """N-19 -- static pre-flight lint for a CP2K ``.inp`` file.
+
+    Checks (CP2K_LESSONS + РЕШЕНИЕ-109 NEB protocol): D3/VDW_POTENTIAL present
+    (FAIL if a layered/vdW system lacks it), OT/+U vs non-Gamma k-points [ТУПИК],
+    GAPW for 3d metals, MGRID CUTOFF/REL_CUTOFF, and &BAND sanity
+    (NUMBER_OF_REPLICA, K_SPRING, OPTIMIZE_BAND MAX_FORCE). ``layered`` makes the
+    missing-D3 check FAIL-level (set False for non-vdW systems).
+    """
+    from prodromos.lint_cp2k_input import run_lint_cp2k_input
+
+    return run_lint_cp2k_input(inp_path, layered=layered)
+
+
+def tool_carrier_integrity(
+    band: str,
+    mobile: str = "H",
+    acceptors: str = "S",
+    metals: str = "Fe,Ni",
+    metal_bond_cut: float = 1.8,
+) -> dict:
+    """N-18 -- carrier-integrity gate (geometry-only, tool-agnostic).
+
+    Verifies a mobile proton/ion stays bound to its intended ACCEPTOR (e.g. S)
+    along an NEB band rather than collapsing onto a METAL (e.g. Fe-hydride) -- the
+    foundation-MLIP Fe-H failure mode and a real DFT endpoint risk. ``band`` is a
+    multi-image xyz/extxyz/traj or a directory of ``img_*.xyz``. ``acceptors`` and
+    ``metals`` are comma-separated element lists.
+    """
+    from prodromos.carrier_integrity_gate import run_carrier_integrity
+
+    return run_carrier_integrity(
+        band,
+        mobile=mobile,
+        acceptors=[s for s in acceptors.split(",") if s],
+        metals=[s for s in metals.split(",") if s],
+        metal_bond_cut=metal_bond_cut,
+    )
+
+
 def tool_h_barrier_readiness(
     barrier_eV: float,
     has_dft_freq: bool,
@@ -1195,6 +1235,8 @@ _GATE_TOOLS: dict[str, Any] = {
     "vfe_preflight": tool_vfe_preflight,
     "external_reference": tool_external_reference,
     "lint_dft_script": tool_lint_dft_script,
+    "lint_cp2k_input": tool_lint_cp2k_input,
+    "carrier_integrity": tool_carrier_integrity,
     "h_barrier_readiness": tool_h_barrier_readiness,
     "neb_advisor": tool_neb_advisor,
     "saddle_proximity": tool_saddle_proximity,
@@ -1302,10 +1344,87 @@ def _pid_alive(pid: int) -> bool:
         return False
 
 
+def _get_parent_pid() -> int:
+    """Return the PID of our parent process (best-effort; 0 on failure)."""
+    try:
+        if os.name == "nt":
+            import ctypes
+            import ctypes.wintypes
+
+            TH32CS_SNAPPROCESS = 0x00000002
+            our_pid = os.getpid()
+
+            class PROCESSENTRY32(ctypes.Structure):
+                _fields_ = [
+                    ("dwSize", ctypes.wintypes.DWORD),
+                    ("cntUsage", ctypes.wintypes.DWORD),
+                    ("th32ProcessID", ctypes.wintypes.DWORD),
+                    ("th32DefaultHeapID", ctypes.POINTER(ctypes.c_ulong)),
+                    ("th32ModuleID", ctypes.wintypes.DWORD),
+                    ("cntThreads", ctypes.wintypes.DWORD),
+                    ("th32ParentProcessID", ctypes.wintypes.DWORD),
+                    ("pcPriClassBase", ctypes.c_long),
+                    ("dwFlags", ctypes.wintypes.DWORD),
+                    ("szExeFile", ctypes.c_char * 260),
+                ]
+
+            kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+            snap = kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
+            if snap == ctypes.wintypes.HANDLE(-1).value:
+                return 0
+            try:
+                entry = PROCESSENTRY32()
+                entry.dwSize = ctypes.sizeof(PROCESSENTRY32)
+                if not kernel32.Process32First(snap, ctypes.byref(entry)):
+                    return 0
+                while True:
+                    if entry.th32ProcessID == our_pid:
+                        return entry.th32ParentProcessID
+                    if not kernel32.Process32Next(snap, ctypes.byref(entry)):
+                        break
+            finally:
+                kernel32.CloseHandle(snap)
+            return 0
+        # Unix: use os.getppid()
+        return os.getppid()  # type: ignore[attr-defined]
+    except Exception:  # noqa: BLE001
+        return 0
+
+
+def _start_parent_watch(parent_pid: int, check_interval: float = 5.0) -> None:
+    """Daemon thread: exit when our parent process (Claude Code) dies.
+
+    Claude Code spawns prodromos as a stdio-MCP subprocess.  When Claude Code
+    crashes or is force-closed the OS does NOT deliver EOF to the child's stdin
+    reliably on Windows, so the prodromos process lingers as a zombie.  This
+    thread detects that and calls ``os._exit(0)`` so the next session starts
+    clean.
+
+    Safe for parallel Claude Code windows: each window has its own parent PID
+    and its own prodromos child, so watching the individual parent is harmless.
+    """
+    import threading
+    import time
+
+    def _watch() -> None:
+        while True:
+            time.sleep(check_interval)
+            if not _pid_alive(parent_pid):
+                _log(f"parent pid={parent_pid} is gone; exiting to avoid orphan accumulation")
+                os._exit(0)
+
+    t = threading.Thread(target=_watch, daemon=True, name="parent-watch")
+    t.start()
+
+
 def _acquire_singleton_lock() -> Path | None:
-    """Record our PID in the lockfile; warn (but do not kill) if a prior live
-    instance is found -- stdio is per-client, so a lingering process from a
-    ``/mcp`` reconnect is an orphan suspect. Replace policy: we take the lock.
+    """Record our PID in the lockfile; warn if a prior live instance is found.
+
+    A prior live process is almost always an orphan from an ``/mcp`` reconnect
+    where Claude Code started a fresh subprocess without sending EOF to the old
+    one.  We take the lock so the next startup knows who the current server is.
+    The ``_start_parent_watch`` call in ``main()`` is the complementary fix that
+    causes the old process to exit when its Claude Code session dies.
     """
     try:
         if _LOCK_PATH.exists():
@@ -1343,6 +1462,10 @@ def main() -> None:
     reconnect cannot orphan it. The PID is logged to stderr at start and stop.
     """
     _log(f"starting (pid={os.getpid()}, tools={len(_TOOLS)})")
+    parent_pid = _get_parent_pid()
+    if parent_pid:
+        _start_parent_watch(parent_pid)
+        _log(f"parent-watch active (parent pid={parent_pid})")
     lock = _acquire_singleton_lock()
     try:
         server.run()
