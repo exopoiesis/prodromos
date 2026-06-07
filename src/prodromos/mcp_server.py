@@ -18,9 +18,13 @@ the server and pumps stdio.
 from __future__ import annotations
 
 import functools
+import itertools
+import logging
+import logging.handlers
 import os
 import sys
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
@@ -35,6 +39,53 @@ server = FastMCP("prodromos")
 def _log(msg: str) -> None:
     """Log to STDERR (stdout is the MCP protocol channel -- never write there)."""
     print(f"[prodromos-mcp] {msg}", file=sys.stderr, flush=True)
+
+
+# ---------------------------------------------------------------------------
+# File logger -- persists across calls; survives hang for post-mortem analysis
+# ---------------------------------------------------------------------------
+_MCP_LOG_PATH = Path(os.environ.get("PRODROMOS_MCP_LOG", "")).expanduser() if os.environ.get("PRODROMOS_MCP_LOG") else Path(tempfile.gettempdir()) / "prodromos-mcp.log"
+
+_file_logger: logging.Logger | None = None
+_call_counter = itertools.count(1)
+
+
+def _setup_file_logger() -> logging.Logger:
+    """Configure a rotating file logger for per-call tracing.
+
+    Default path: ``%TEMP%/prodromos-mcp.log`` (overridable via
+    ``PRODROMOS_MCP_LOG`` env var).  Two backup files (5 MB each = 15 MB max).
+
+    Format per line::
+
+        2026-06-07T15:23:01 pid=12208 call#3 CALL  tool=plan       args=case_path,mode
+        2026-06-07T15:23:01 pid=12208 call#3 DONE  tool=plan       dt=0.21s verdict=GO
+        2026-06-07T15:23:05 pid=12208 call#7 CALL  tool=import_mp  args=material_id
+        -- if it hangs, DONE never appears for call#7 --
+    """
+    logger = logging.getLogger("prodromos.mcp")
+    if logger.handlers:
+        return logger
+    logger.setLevel(logging.DEBUG)
+    logger.propagate = False
+    try:
+        handler: logging.Handler = logging.handlers.RotatingFileHandler(
+            _MCP_LOG_PATH, maxBytes=5 * 1024 * 1024, backupCount=2, encoding="utf-8", delay=False
+        )
+    except OSError:
+        handler = logging.StreamHandler(sys.stderr)
+    handler.setFormatter(logging.Formatter(
+        "%(asctime)s pid=%(process)d %(message)s",
+        datefmt="%Y-%m-%dT%H:%M:%S",
+    ))
+    logger.addHandler(handler)
+    return logger
+
+
+def _flog(msg: str) -> None:
+    """Write one line to the file log (no-op if logger not yet set up)."""
+    if _file_logger is not None:
+        _file_logger.info(msg)
 
 
 # ===========================================================================
@@ -1296,18 +1347,38 @@ def _offload(name: str, fn: Any) -> Any:
     each core via ``anyio.to_thread.run_sync`` keeps the loop free. ``functools.wraps``
     preserves the typed signature + docstring so FastMCP still derives the correct
     JSON schema (verified: ``is_async`` becomes True, params survive).
+
+    Each call is traced to the file log (path in ``_MCP_LOG_PATH``):
+    - ``CALL`` line at entry: tool name + kwarg keys (values omitted -- can be large)
+    - ``DONE`` line at exit: wall time + verdict from the returned envelope
+    - ``FAIL`` line on exception: wall time + repr of the exception
+
+    If the server hangs, the log will show an open ``CALL`` with no matching
+    ``DONE`` -- the tool name and call# identify the culprit instantly.
     """
 
     @functools.wraps(fn)
     async def _async_tool(*args: Any, **kwargs: Any) -> Any:
+        call_id = next(_call_counter)
+        arg_keys = ",".join(list(kwargs.keys()) + ([f"{len(args)}pos"] if args else []))
+        _flog(f"call#{call_id:<4} CALL  tool={name:<22} args={arg_keys}")
+        t0 = time.perf_counter()
         call = functools.partial(fn, *args, **kwargs)
-        if _TOOL_TIMEOUT_S > 0:
-            try:
-                with anyio.fail_after(_TOOL_TIMEOUT_S):
-                    return await anyio.to_thread.run_sync(call, abandon_on_cancel=True)
-            except TimeoutError:
-                return _timeout_envelope(name, _TOOL_TIMEOUT_S)
-        return await anyio.to_thread.run_sync(call)
+        try:
+            if _TOOL_TIMEOUT_S > 0:
+                try:
+                    with anyio.fail_after(_TOOL_TIMEOUT_S):
+                        result = await anyio.to_thread.run_sync(call, abandon_on_cancel=True)
+                except TimeoutError:
+                    result = _timeout_envelope(name, _TOOL_TIMEOUT_S)
+            else:
+                result = await anyio.to_thread.run_sync(call)
+            verdict = result.get("verdict", "?") if isinstance(result, dict) else "ok"
+            _flog(f"call#{call_id:<4} DONE  tool={name:<22} dt={time.perf_counter()-t0:.2f}s verdict={verdict}")
+            return result
+        except Exception as exc:
+            _flog(f"call#{call_id:<4} FAIL  tool={name:<22} dt={time.perf_counter()-t0:.2f}s err={exc!r}")
+            raise
 
     return _async_tool
 
@@ -1461,16 +1532,21 @@ def main() -> None:
     the ``finally`` releases the lock and the process exits cleanly -- a ``/mcp``
     reconnect cannot orphan it. The PID is logged to stderr at start and stop.
     """
-    _log(f"starting (pid={os.getpid()}, tools={len(_TOOLS)})")
+    global _file_logger
+    _file_logger = _setup_file_logger()
+    _log(f"starting (pid={os.getpid()}, tools={len(_TOOLS)}, log={_MCP_LOG_PATH})")
+    _flog(f"SESSION_START pid={os.getpid()} tools={len(_TOOLS)} timeout_s={_TOOL_TIMEOUT_S}")
     parent_pid = _get_parent_pid()
     if parent_pid:
         _start_parent_watch(parent_pid)
         _log(f"parent-watch active (parent pid={parent_pid})")
+        _flog(f"PARENT_WATCH  parent_pid={parent_pid}")
     lock = _acquire_singleton_lock()
     try:
         server.run()
     finally:
         _log(f"shutting down (pid={os.getpid()})")
+        _flog(f"SESSION_END   pid={os.getpid()}")
         _release_singleton_lock(lock)
 
 
