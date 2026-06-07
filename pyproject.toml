@@ -42,11 +42,10 @@ dev = [
     "ruff>=0.6",
 ]
 # The `plan` engine orchestrates the $0 gates over a tm-spec case document.
-# tm-spec is not on PyPI; install it editable from a sibling checkout
-# (`pip install -e ../tm-spec`). `pip install -e .` and `.[dev]` stay green
+# tm-spec is on PyPI since 0.3.0. `pip install -e .` and `.[dev]` stay green
 # without tm-spec; only `plan` mode requires it.
 plan = [
-    "tm-spec",
+    "tm-spec>=0.3",
 ]
 # Thin in-process stdio MCP server (no proxy / network / Docker). `.[dev]` and
 # `pip install -e .` stay green without it; only `prodromos-mcp` needs it.
